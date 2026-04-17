@@ -64,7 +64,7 @@ function AuthScreen({ onAuthenticate }) {
         if (!turnstileToken) throw new Error("Please provide a Turnstile token");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        await client.account.register({
+        await client.account.create({
           username,
           email,
           password,
@@ -100,7 +100,7 @@ function AuthScreen({ onAuthenticate }) {
 
   return (
     <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         style={{ width: isSignup ? '450px' : '400px', background: 'rgba(10, 11, 16, 0.9)', padding: '2rem', borderRadius: '16px', border: '1px solid var(--glass-border)', boxShadow: 'var(--neon-shadow)', backdropFilter: 'blur(10px)' }}
@@ -112,14 +112,14 @@ function AuthScreen({ onAuthenticate }) {
 
         {!isSignup && (
           <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-            <button 
+            <button
               type="button"
               onClick={() => setAuthType('apikey')}
               style={{ flex: 1, background: authType === 'apikey' ? 'rgba(99, 102, 241, 0.2)' : 'transparent', border: '1px solid', borderColor: authType === 'apikey' ? 'var(--accent-primary)' : 'var(--glass-border)', color: authType === 'apikey' ? 'var(--accent-primary)' : 'var(--text-muted)', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
             >
               <Key size={18} /> API Key
             </button>
-            <button 
+            <button
               type="button"
               onClick={() => setAuthType('login')}
               style={{ flex: 1, background: authType === 'login' ? 'rgba(168, 85, 247, 0.2)' : 'transparent', border: '1px solid', borderColor: authType === 'login' ? 'var(--accent-secondary)' : 'var(--glass-border)', color: authType === 'login' ? 'var(--accent-secondary)' : 'var(--text-muted)', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
@@ -131,7 +131,7 @@ function AuthScreen({ onAuthenticate }) {
 
         <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '0.5rem', borderRadius: '4px' }}>{error}</div>}
-          
+
           {isSignup ? (
             <>
               <div className="input-wrapper">
@@ -146,23 +146,15 @@ function AuthScreen({ onAuthenticate }) {
                 <Lock size={18} color="var(--text-muted)" />
                 <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
-              <div className="input-wrapper">
-                <Lock size={18} color="var(--text-muted)" />
-                <input type="password" placeholder="Confirm Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-              </div>
-              <div className="input-wrapper">
-                <Cpu size={18} color="var(--text-muted)" />
-                <input type="text" placeholder="Turnstile Token auto-filled" value={turnstileToken} readOnly style={{ opacity: 0.6 }} />
-              </div>
               <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
             </>
           ) : (
             authType === 'apikey' ? (
               <div className="input-wrapper">
                 <Key size={18} color="var(--text-muted)" />
-                <input 
-                  type="password" 
-                  placeholder="Sogni API Key" 
+                <input
+                  type="password"
+                  placeholder="Sogni API Key"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                 />
@@ -171,18 +163,18 @@ function AuthScreen({ onAuthenticate }) {
               <>
                 <div className="input-wrapper">
                   <User size={18} color="var(--text-muted)" />
-                  <input 
-                    type="text" 
-                    placeholder="Username" 
+                  <input
+                    type="text"
+                    placeholder="Username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                   />
                 </div>
                 <div className="input-wrapper">
                   <Lock size={18} color="var(--text-muted)" />
-                  <input 
-                    type="password" 
-                    placeholder="Password" 
+                  <input
+                    type="password"
+                    placeholder="Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
@@ -191,8 +183,8 @@ function AuthScreen({ onAuthenticate }) {
             )
           )}
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={isLoading || (isSignup && !turnstileToken)}
             style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '1rem', border: 'none', borderRadius: '12px', cursor: (isLoading || (isSignup && !turnstileToken)) ? 'not-allowed' : 'pointer', fontWeight: 600, marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: (isSignup && !turnstileToken) ? 0.5 : 1 }}
           >
@@ -202,8 +194,8 @@ function AuthScreen({ onAuthenticate }) {
 
         <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
           {isSignup ? "Already have an account?" : "Don't have an account?"}{' '}
-          <button 
-            onClick={() => setIsSignup(!isSignup)} 
+          <button
+            onClick={() => setIsSignup(!isSignup)}
             style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 500, textDecoration: 'underline' }}
           >
             {isSignup ? 'Sign In' : 'Sign Up'}
@@ -245,7 +237,7 @@ function App() {
   if (isInitializing) {
     return <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>Initializing Sogni SDK...</div>;
   }
-  
+
   if (!sogniClient) {
     return <AuthScreen onAuthenticate={(client) => setSogniClient(client)} />;
   }
@@ -260,12 +252,12 @@ function App() {
 
 function ChatApp({ sogni, onLogout }) {
   const defaultMessage = { id: 1, text: "Welcome to Sogni SDK Helper. How can I assist?", sender: 'bot' };
-  
+
   const getInitialSessions = () => {
     try {
       const saved = localStorage.getItem('sogni_sessions');
       if (saved) return JSON.parse(saved);
-    } catch (e) {}
+    } catch (e) { }
     return [{ id: Date.now().toString(), name: "New Chat", messages: [defaultMessage] }];
   };
 
@@ -276,7 +268,7 @@ function ChatApp({ sogni, onLogout }) {
     if (savedId && initSessions.find(s => s.id === savedId)) return savedId;
     return initSessions[0].id;
   });
-  
+
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -327,36 +319,36 @@ function ChatApp({ sogni, onLogout }) {
     }
   };
 
-    const generateAITitle = async (userText, sessionId) => {
+  const generateAITitle = async (userText, sessionId) => {
     if (!sogni) {
       console.warn("Title generation skipped: SogniClient not available");
       return;
     }
-    
+
     try {
       const res = await sogni.chat.completions.create({
         model: 'qwen3.5-35b-a3b-gguf-q4km',
         messages: [
-          { 
-            role: 'system', 
-            content: `Generate a 2-3 word chat title. Return ONLY the title text.` 
+          {
+            role: 'system',
+            content: `Generate a 2-3 word chat title. Return ONLY the title text.`
           },
           { role: 'user', content: userText }
         ],
         max_tokens: 20
       });
-      
-      let titleText = res?.choices?.[0]?.message?.content 
-                   || res?.message?.content 
-                   || res?.content 
-                   || res?.text;
+
+      let titleText = res?.choices?.[0]?.message?.content
+        || res?.message?.content
+        || res?.content
+        || res?.text;
 
       if (typeof titleText === 'string' && titleText.length > 0) {
         // Strip think tags
         let mainTitle = titleText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
         // Remove quotes and clean up
         mainTitle = mainTitle.replace(/['"]+|^TITLE:|^Title:|\.$/g, '').trim();
-        
+
         if (mainTitle && mainTitle.length > 1) {
           updateSessionName(sessionId, mainTitle);
           console.log(`Generated title for ${sessionId}: ${mainTitle}`);
@@ -387,7 +379,7 @@ function ChatApp({ sogni, onLogout }) {
 
     try {
       if (!sogni) throw new Error("SogniClient not initialized");
-      
+
       const response = await sogni.chat.completions.create({
         model: 'qwen3.5-35b-a3b-gguf-q4km',
         messages: [
@@ -398,10 +390,10 @@ function ChatApp({ sogni, onLogout }) {
       });
 
       // Robustly extract the text from various known Sogni/OpenAI variants
-      let botText = response?.choices?.[0]?.message?.content 
-                 || response?.message?.content 
-                 || response?.content 
-                 || response?.text;
+      let botText = response?.choices?.[0]?.message?.content
+        || response?.message?.content
+        || response?.content
+        || response?.text;
 
       if (typeof botText !== 'string') {
         botText = "The Sogni model responded, but the data format was unreadable. Check proxy configurations.";
@@ -436,7 +428,7 @@ function ChatApp({ sogni, onLogout }) {
 
   return (
     <div className="app-container">
-      <Sidebar 
+      <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
         isSidebarOpen={isSidebarOpen}
@@ -460,48 +452,48 @@ function ChatApp({ sogni, onLogout }) {
             <span>Sogni SDK Helper Agent</span>
           </div>
           <div className="header-right" style={{ position: 'relative' }}>
-            <div 
+            <div
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             >
               soft4211 <User size={16} />
             </div>
             {isDropdownOpen && (
-               <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 50, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
-                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Select Chat Currency</div>
-                 
-                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                   <input 
-                     type="radio" 
-                     name="currency" 
-                     checked={chatCurrency === 'sparks'} 
-                     onChange={() => setChatCurrency('sparks')} 
-                   />
-                   <span>Sparks (Preferred)</span>
-                 </label>
-                 
-                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                   <input 
-                     type="radio" 
-                     name="currency" 
-                     checked={chatCurrency === 'sogni'} 
-                     onChange={() => setChatCurrency('sogni')} 
-                   />
-                   <span>Sogni Tokens</span>
-                 </label>
+              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 50, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Select Chat Currency</div>
 
-                 <button 
-                   onClick={onLogout}
-                   style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
-                 >
-                   Logout & Clear Cache
-                 </button>
-               </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="currency"
+                    checked={chatCurrency === 'sparks'}
+                    onChange={() => setChatCurrency('sparks')}
+                  />
+                  <span>Sparks (Preferred)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="currency"
+                    checked={chatCurrency === 'sogni'}
+                    onChange={() => setChatCurrency('sogni')}
+                  />
+                  <span>Sogni Tokens</span>
+                </label>
+
+                <button
+                  onClick={onLogout}
+                  style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
+                >
+                  Logout & Clear Cache
+                </button>
+              </div>
             )}
           </div>
         </header>
 
-        <ChatArea 
+        <ChatArea
           activeSession={activeSession}
           isTyping={isTyping}
           input={input}

@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/sogni-api/:path*",
+      "destination": "https://api.sogni.ai/:path*"
+    }
+  ]
+}
