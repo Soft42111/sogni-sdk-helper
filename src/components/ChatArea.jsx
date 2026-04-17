@@ -6,7 +6,7 @@ import MessageBubble from './MessageBubble';
 export default function ChatArea({
   activeSession,
   isTyping,
-  isSearchingDocs,
+  isSearching,
   input,
   setInput,
   sendMessage,
@@ -70,7 +70,7 @@ export default function ChatArea({
                 />
               );
             })}
-            {(isTyping || isSearchingDocs) && (
+            {(isTyping || isSearching) && (
               <motion.div 
                 layout
                 initial={{ opacity: 0, y: 10 }}
@@ -84,7 +84,7 @@ export default function ChatArea({
                     className="flex items-center gap-2"
                   >
                     <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse" />
-                    {isSearchingDocs ? "Researching Sogni SDK Docs..." : "Sogni is thinking..."}
+                    {isSearching ? "Researching Sogni SDK Docs..." : "Sogni is thinking..."}
                   </motion.div>
                 </div>
               </motion.div>

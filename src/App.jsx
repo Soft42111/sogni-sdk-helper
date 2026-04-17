@@ -10,14 +10,24 @@ import ChatArea from './components/ChatArea';
 
 // --- CORS PROXY PATCH ---
 // Intercept all requests to https://api.sogni.ai and redirect them to Vite's proxy 
-// to bypass the browser's local development CORS restrictions.
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
-  if (typeof resource === 'string' && resource.startsWith('https://api.sogni.ai')) {
-    resource = resource.replace('https://api.sogni.ai', '/sogni-api');
-  } else if (resource instanceof Request && resource.url.startsWith('https://api.sogni.ai')) {
-    resource = new Request(resource.url.replace('https://api.sogni.ai', '/sogni-api'), resource);
+  const getUrl = (r) => {
+    if (typeof r === 'string') return r;
+    if (r instanceof URL) return r.toString();
+    if (r instanceof Request) return r.url;
+    return '';
+  };
+  
+  const url = getUrl(resource);
+  if (url.startsWith('https://api.sogni.ai')) {
+    const newUrl = url.replace('https://api.sogni.ai', '/sogni-api');
+    if (resource instanceof Request) {
+      resource = new Request(newUrl, resource);
+    } else {
+      resource = newUrl;
+    }
   }
   return originalFetch(resource, config);
 };
@@ -318,7 +328,7 @@ function ChatApp({ sogni, onLogout }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [chatCurrency, setChatCurrency] = useState('sparks');
   const [balances, setBalances] = useState({ sparks: '0.00', sogni: '0.00' });
-  const [isSearchingDocs, setIsSearchingDocs] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const scrollRef = useRef(null);
 
   const fetchBalances = async () => {
@@ -452,7 +462,7 @@ function ChatApp({ sogni, onLogout }) {
         const message = choice.message;
 
         if (message.tool_calls) {
-          setIsSearchingDocs(true);
+          setIsSearching(true);
           apiMessages.push(message);
 
           for (const toolCall of message.tool_calls) {
@@ -479,7 +489,7 @@ function ChatApp({ sogni, onLogout }) {
         }
       }
 
-      setIsSearchingDocs(false);
+      setIsSearching(false);
       fetchBalances();
 
       let botText = finalBotText;
@@ -586,7 +596,7 @@ function ChatApp({ sogni, onLogout }) {
         <ChatArea
           activeSession={activeSession}
           isTyping={isTyping}
-          isSearchingDocs={isSearchingDocs}
+          isSearching={isSearching}
           input={input}
           setInput={setInput}
           sendMessage={sendMessage}
