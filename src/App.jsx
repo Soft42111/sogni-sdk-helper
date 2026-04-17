@@ -4,6 +4,7 @@ import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageS
 import { SogniClient } from '@sogni-ai/sogni-client';
 import { getResponse } from './constants/sdk-info';
 import { SOGNI_KNOWLEDGE_BASE } from './constants/sogni-knowledge';
+import sogniDocs from './constants/sogni-docs.json';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 
@@ -23,6 +24,31 @@ window.fetch = async (...args) => {
 // ------------------------
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAC-9sNk_20dEkOAn';
+
+const SOGNI_DOC_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'list_sogni_docs',
+      description: 'Returns a list of all 64 Sogni SDK documentation volumes (filenames and titles). Use this to see what topics are available.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_sogni_doc',
+      description: 'Reads the full content of a specific Sogni SDK documentation volume. Requires the exact filename (e.g., "VOL_01_MANIFESTO.md").',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename: { type: 'string', description: 'The exact filename to read' }
+        },
+        required: ['filename']
+      }
+    }
+  }
+];
 
 function TurnstileWidget({ onVerify }) {
   const widgetRef = useRef(null);
@@ -259,6 +285,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('sogni_auth');
+    // We only clear auth, NOT sessions, to preserve chat history
     setSogniClient(null);
   };
 
@@ -290,7 +317,26 @@ function ChatApp({ sogni, onLogout }) {
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [chatCurrency, setChatCurrency] = useState('sparks');
+  const [balances, setBalances] = useState({ sparks: '0.00', sogni: '0.00' });
+  const [isSearchingDocs, setIsSearchingDocs] = useState(false);
   const scrollRef = useRef(null);
+
+  const fetchBalances = async () => {
+    if (!sogni) return;
+    try {
+      const b = await sogni.account.accountBalance();
+      setBalances({
+        sparks: parseFloat(b.settledSpark || 0).toFixed(2),
+        sogni: parseFloat(b.settledSogni || 0).toFixed(2)
+      });
+    } catch (e) {
+      console.warn("Could not fetch balances", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchBalances();
+  }, [sogni]);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -385,28 +431,61 @@ function ChatApp({ sogni, onLogout }) {
     try {
       if (!sogni) throw new Error("SogniClient not initialized");
 
-      const response = await sogni.chat.completions.create({
-        model: 'qwen3.5-35b-a3b-gguf-q4km',
-        messages: [
-          { role: 'system', content: `You are the Sogni SDK Expert Assistant. Use the following context to provide technically accurate answers about the Sogni Supernet:\n${SOGNI_KNOWLEDGE_BASE}` },
-          ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
-        ],
-        max_tokens: 4096
-      });
+      let apiMessages = [
+        { role: 'system', content: `You are the Sogni SDK Expert Assistant. You have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'read_sogni_doc' tool to fetch the exact specs before answering.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
+        ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
+      ];
 
-      // Fetch balance after every successful message to keep UI updated
+      let isLooping = true;
+      let finalBotText = "";
+
+      while (isLooping) {
+        const response = await sogni.chat.completions.create({
+          model: 'qwen3.5-35b-a3b-gguf-q4km',
+          messages: apiMessages,
+          tools: SOGNI_DOC_TOOLS,
+          tool_choice: 'auto',
+          max_tokens: 4096
+        });
+
+        const choice = response.choices[0];
+        const message = choice.message;
+
+        if (message.tool_calls) {
+          setIsSearchingDocs(true);
+          apiMessages.push(message);
+
+          for (const toolCall of message.tool_calls) {
+            const funcName = toolCall.function.name;
+            const args = JSON.parse(toolCall.function.arguments);
+            let result = "";
+
+            if (funcName === 'list_sogni_docs') {
+              result = JSON.stringify(Object.keys(sogniDocs));
+            } else if (funcName === 'read_sogni_doc') {
+              result = sogniDocs[args.filename] || "Document not found.";
+            }
+
+            apiMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: result
+            });
+          }
+          // Continue loop to let LLM process tool results
+        } else {
+          finalBotText = message.content;
+          isLooping = false;
+        }
+      }
+
+      setIsSearchingDocs(false);
       fetchBalances();
 
-      // Robustly extract the text from various known Sogni/OpenAI variants
-      let botText = response?.choices?.[0]?.message?.content
-        || response?.message?.content
-        || response?.content
-        || response?.text;
-
+      let botText = finalBotText;
       if (typeof botText !== 'string') {
-        botText = "The Sogni model responded, but the data format was unreadable. Check proxy configurations.";
+        botText = "The Sogni model responded, but the data format was unreadable.";
       } else {
-        // Strip think tags for a cleaner UI response
         botText = botText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
       }
 
@@ -467,13 +546,13 @@ function ChatApp({ sogni, onLogout }) {
               soft4211 <User size={16} />
             </div>
             {isDropdownOpen && (
-              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 50, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                   <div style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Sparks: {balances.sparks}</div>
-                   <div style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Sogni: {balances.sogni}</div>
+              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 100, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: '200px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                   <div style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: '0.9rem' }}>{balances.sparks} Sparks</div>
+                   <div style={{ color: 'var(--accent-secondary)', fontWeight: 700, fontSize: '0.9rem' }}>{balances.sogni} Sogni</div>
                 </div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
                   <input
                     type="radio"
                     name="currency"
@@ -483,7 +562,7 @@ function ChatApp({ sogni, onLogout }) {
                   <span>Pay with Sparks</span>
                 </label>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
                   <input
                     type="radio"
                     name="currency"
@@ -495,9 +574,9 @@ function ChatApp({ sogni, onLogout }) {
 
                 <button
                   onClick={onLogout}
-                  style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
+                  style={{ width: '100%', marginTop: '0.25rem', padding: '0.6rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
                 >
-                  Logout (Keep Sessions)
+                  Logout (Keep Chats)
                 </button>
               </div>
             )}
@@ -507,6 +586,7 @@ function ChatApp({ sogni, onLogout }) {
         <ChatArea
           activeSession={activeSession}
           isTyping={isTyping}
+          isSearchingDocs={isSearchingDocs}
           input={input}
           setInput={setInput}
           sendMessage={sendMessage}

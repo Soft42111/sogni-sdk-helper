@@ -69,7 +69,7 @@ export default function ChatArea({
                 />
               );
             })}
-            {isTyping && (
+            {(isTyping || isSearchingDocs) && (
               <motion.div 
                 layout
                 initial={{ opacity: 0, y: 10 }}
@@ -80,8 +80,10 @@ export default function ChatArea({
                   <motion.div 
                     animate={{ opacity: [0.4, 1, 0.4] }} 
                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                    className="flex items-center gap-2"
                   >
-                    Sogni is thinking...
+                    <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+                    {isSearchingDocs ? "Researching Sogni SDK Docs..." : "Sogni is thinking..."}
                   </motion.div>
                 </div>
               </motion.div>

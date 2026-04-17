@@ -44,29 +44,13 @@ export default function Sidebar({
           {sessions.map(session => (
             <div 
               key={session.id}
-              className={`chat-item group ${activeSessionId === session.id ? 'active' : ''}`}
+              className={`chat-item ${activeSessionId === session.id ? 'active' : ''}`}
               onClick={() => { setActiveSessionId(session.id); setIsSidebarOpen(false); }}
-              style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '2rem' }}>
-                {session.name}
-              </span>
+              <span>{session.name}</span>
               <button 
                 className="delete-chat-btn"
                 onClick={(e) => deleteChat(e, session.id)}
-                style={{ 
-                  background: 'transparent', 
-                  border: 'none', 
-                  color: 'var(--text-muted)', 
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: 0,
-                  transition: 'opacity 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
               >
                 <Trash2 size={14} />
               </button>
