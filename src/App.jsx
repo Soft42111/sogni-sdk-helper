@@ -42,11 +42,12 @@ function TurnstileWidget({ onVerify }) {
 function AuthScreen({ onAuthenticate }) {
   const [authType, setAuthType] = useState('apikey'); // 'apikey' or 'login'
   const [isSignup, setIsSignup] = useState(false);
-  const [apiKey, setApiKey] = useState(import.meta.env.VITE_SOGNI_API_KEY || '');
+  const [apiKey, setApiKey] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -68,7 +69,8 @@ function AuthScreen({ onAuthenticate }) {
           username,
           email,
           password,
-          turnstileToken
+          turnstileToken,
+          referralCode
         });
         // Save for persistence
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
@@ -145,6 +147,14 @@ function AuthScreen({ onAuthenticate }) {
               <div className="input-wrapper">
                 <Lock size={18} color="var(--text-muted)" />
                 <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              <div className="input-wrapper">
+                <Lock size={18} color="var(--text-muted)" />
+                <input type="password" placeholder="Re-enter Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              </div>
+              <div className="input-wrapper">
+                <PlusCircle size={18} color="var(--text-muted)" />
+                <input type="text" placeholder="Referral Code (Optional)" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
               </div>
               <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
             </>
