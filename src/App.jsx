@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageSquare, Key, User, Lock, LogIn, Menu, X } from 'lucide-react';
 import { SogniClient } from '@sogni-ai/sogni-client';
 import { getResponse } from './constants/sdk-info';
+import { SOGNI_KNOWLEDGE_BASE } from './constants/sogni-knowledge';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 
@@ -65,13 +66,16 @@ function AuthScreen({ onAuthenticate }) {
         if (!turnstileToken) throw new Error("Please provide a Turnstile token");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        await client.account.create({
+        const result = await client.account.create({
           username,
           email,
           password,
           turnstileToken,
           referralCode
         });
+        
+        if (result?.error) throw new Error(result.error);
+
         // Save for persistence
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
       } else if (authType === 'apikey') {
@@ -93,8 +97,9 @@ function AuthScreen({ onAuthenticate }) {
       }
       onAuthenticate(client);
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Authentication failed. Check your credentials.');
+      console.error("Auth Exception:", err);
+      const errorMsg = err.payload?.message || err.message || 'Authentication failed.';
+      setError(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -330,10 +335,7 @@ function ChatApp({ sogni, onLogout }) {
   };
 
   const generateAITitle = async (userText, sessionId) => {
-    if (!sogni) {
-      console.warn("Title generation skipped: SogniClient not available");
-      return;
-    }
+    if (!sogni) return;
 
     try {
       const res = await sogni.chat.completions.create({
@@ -341,27 +343,20 @@ function ChatApp({ sogni, onLogout }) {
         messages: [
           {
             role: 'system',
-            content: `Generate a 2-3 word chat title. Return ONLY the title text.`
-          },
-          { role: 'user', content: userText }
+            content: `You are a title generator. Generate a 2-3 word chat title for a conversation starting with: "${userText}". Return ONLY the plain text title. No quotes, no prefix.`
+          }
         ],
-        max_tokens: 20
+        max_tokens: 15
       });
 
-      let titleText = res?.choices?.[0]?.message?.content
-        || res?.message?.content
-        || res?.content
-        || res?.text;
+      let titleText = res?.choices?.[0]?.message?.content || res?.message?.content || res?.text;
 
-      if (typeof titleText === 'string' && titleText.length > 0) {
-        // Strip think tags
+      if (titleText) {
         let mainTitle = titleText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-        // Remove quotes and clean up
         mainTitle = mainTitle.replace(/['"]+|^TITLE:|^Title:|\.$/g, '').trim();
 
-        if (mainTitle && mainTitle.length > 1) {
-          updateSessionName(sessionId, mainTitle);
-          console.log(`Generated title for ${sessionId}: ${mainTitle}`);
+        if (mainTitle && mainTitle.length > 2) {
+          setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: mainTitle } : s));
         }
       }
     } catch (e) {
@@ -393,11 +388,14 @@ function ChatApp({ sogni, onLogout }) {
       const response = await sogni.chat.completions.create({
         model: 'qwen3.5-35b-a3b-gguf-q4km',
         messages: [
-          { role: 'system', content: 'You are an AI assistant for the Sogni SDK. Provide concise helpful answers.' },
+          { role: 'system', content: `You are the Sogni SDK Expert Assistant. Use the following context to provide technically accurate answers about the Sogni Supernet:\n${SOGNI_KNOWLEDGE_BASE}` },
           ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
         ],
         max_tokens: 4096
       });
+
+      // Fetch balance after every successful message to keep UI updated
+      fetchBalances();
 
       // Robustly extract the text from various known Sogni/OpenAI variants
       let botText = response?.choices?.[0]?.message?.content
@@ -470,7 +468,10 @@ function ChatApp({ sogni, onLogout }) {
             </div>
             {isDropdownOpen && (
               <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 50, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Select Chat Currency</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                   <div style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Sparks: {balances.sparks}</div>
+                   <div style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Sogni: {balances.sogni}</div>
+                </div>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                   <input
@@ -479,7 +480,7 @@ function ChatApp({ sogni, onLogout }) {
                     checked={chatCurrency === 'sparks'}
                     onChange={() => setChatCurrency('sparks')}
                   />
-                  <span>Sparks (Preferred)</span>
+                  <span>Pay with Sparks</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
@@ -489,14 +490,14 @@ function ChatApp({ sogni, onLogout }) {
                     checked={chatCurrency === 'sogni'}
                     onChange={() => setChatCurrency('sogni')}
                   />
-                  <span>Sogni Tokens</span>
+                  <span>Pay with Sogni</span>
                 </label>
 
                 <button
                   onClick={onLogout}
                   style={{ width: '100%', marginTop: '0.25rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}
                 >
-                  Logout & Clear Cache
+                  Logout (Keep Sessions)
                 </button>
               </div>
             )}
