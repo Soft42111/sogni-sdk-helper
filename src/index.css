@@ -97,7 +97,6 @@ body {
 }
 
 .chat-list {
-.chat-list {
   flex: 1;
   overflow-y: auto;
   display: flex;

@@ -6,6 +6,7 @@ import MessageBubble from './MessageBubble';
 export default function ChatArea({
   activeSession,
   isTyping,
+  isSearchingDocs,
   input,
   setInput,
   sendMessage,
