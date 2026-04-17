@@ -20,7 +20,24 @@ window.fetch = async (...args) => {
   return originalFetch(resource, config);
 };
 // ------------------------
-// ------------------------
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAAC-9sNk_20dEkOAn';
+
+function TurnstileWidget({ onVerify }) {
+  const widgetRef = useRef(null);
+
+  useEffect(() => {
+    if (window.turnstile && widgetRef.current) {
+      window.turnstile.render(widgetRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => onVerify(token),
+        theme: 'dark'
+      });
+    }
+  }, []);
+
+  return <div ref={widgetRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}></div>;
+}
 
 function AuthScreen({ onAuthenticate }) {
   const [authType, setAuthType] = useState('apikey'); // 'apikey' or 'login'
@@ -135,8 +152,9 @@ function AuthScreen({ onAuthenticate }) {
               </div>
               <div className="input-wrapper">
                 <Cpu size={18} color="var(--text-muted)" />
-                <input type="text" placeholder="CF Turnstile Token" value={turnstileToken} onChange={(e) => setTurnstileToken(e.target.value)} />
+                <input type="text" placeholder="Turnstile Token auto-filled" value={turnstileToken} readOnly style={{ opacity: 0.6 }} />
               </div>
+              <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
             </>
           ) : (
             authType === 'apikey' ? (
@@ -175,8 +193,8 @@ function AuthScreen({ onAuthenticate }) {
 
           <button 
             type="submit" 
-            disabled={isLoading}
-            style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '1rem', border: 'none', borderRadius: '12px', cursor: isLoading ? 'not-allowed' : 'pointer', fontWeight: 600, marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+            disabled={isLoading || (isSignup && !turnstileToken)}
+            style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '1rem', border: 'none', borderRadius: '12px', cursor: (isLoading || (isSignup && !turnstileToken)) ? 'not-allowed' : 'pointer', fontWeight: 600, marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: (isSignup && !turnstileToken) ? 0.5 : 1 }}
           >
             {isLoading ? 'Processing...' : (isSignup ? 'Register Account' : <><LogIn size={18} /> Enter Supernet</>)}
           </button>
@@ -387,6 +405,9 @@ function ChatApp({ sogni, onLogout }) {
 
       if (typeof botText !== 'string') {
         botText = "The Sogni model responded, but the data format was unreadable. Check proxy configurations.";
+      } else {
+        // Strip think tags for a cleaner UI response
+        botText = botText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
       }
 
       setSessions(prev => prev.map(s => {
@@ -411,16 +432,6 @@ function ChatApp({ sogni, onLogout }) {
 
   const handleNavClick = (label) => {
     sendMessage(`Tell me about ${label} in Sogni SDK`);
-  };
-
-  const handleAddPersona = () => {
-    const letters = ['A', 'C', 'D', 'E', 'F'];
-    const nm = letters[personas.length % letters.length];
-    setPersonas(prev => [...prev, { id: Date.now(), initial: nm, name: `User ${nm}`, active: false }]);
-  };
-
-  const selectPersona = (id) => {
-    setPersonas(prev => prev.map(p => ({ ...p, active: p.id === id })));
   };
 
   return (
