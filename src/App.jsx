@@ -467,8 +467,8 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
           requestConfig.tool_choice = 'auto';
         } else {
           apiMessages.push({
-            role: 'system',
-            content: 'You have reached the maximum number of searches. Please provide your final answer now based on the gathered information or your own intellect. Do not attempt to use any more tools.'
+            role: 'user',
+            content: '[SYSTEM NOTIFICATION]: You have reached the maximum number of searches. Please provide your final answer now based on the gathered information or your own intellect. Do not attempt to use any more tools.'
           });
         }
 
@@ -605,8 +605,8 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               onChange={(e) => setSelectedModel(e.target.value)}
               style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-sunken)', color: 'var(--text-primary)', border: '1px solid var(--border)', marginRight: '1rem', fontSize: '0.85rem' }}
             >
-              <option value="qwen3.5-35b-a3b-gguf-q4km">Qwen 3.5 (Aligned)</option>
-              <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Qwen 3.5 (Abliterated)</option>
+              <option value="qwen3.5-35b-a3b-gguf-q4km">Normal</option>
+              <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Unrestricted</option>
             </select>
             <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
