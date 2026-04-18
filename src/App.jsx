@@ -6,7 +6,7 @@ import { SOGNI_KNOWLEDGE_BASE } from './constants/sogni-knowledge';
 import sogniDocs from './constants/sogni-docs.json';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
-
+import soulRaw from './soul.md?raw';
 // --- CORS PROXY PATCH ---
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
@@ -114,7 +114,7 @@ function AuthScreen({ onAuthenticate }) {
         if (!turnstileToken) throw new Error("Please complete the verification");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        const result = await client.account.register({
+        const result = await client.account.create({
           username, email, password, turnstileToken, referralCode
         });
 
@@ -441,7 +441,8 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
           { role: 'system', content: 'Generate a very short 2-4 word title for a chat conversation. Return ONLY the title text, nothing else. No quotes, no prefix, no explanation. Do not use <think> tags.' },
           { role: 'user', content: userText }
         ],
-        max_tokens: 20
+        max_tokens: 20,
+        stream: false
       });
 
       const msg = extractMessage(res);
@@ -482,7 +483,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       if (!sogni) throw new Error("SogniClient not initialized");
 
       let apiMessages = [
-        { role: 'system', content: `You are the Sogni SDK Expert Assistant. You have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'read_sogni_doc' tool to fetch the exact specs before answering.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
+        { role: 'system', content: `${soulRaw}\nYou have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'read_sogni_doc' tool to fetch the exact specs before answering.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
         ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
       ];
 
