@@ -1,24 +1,24 @@
 import React, { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Send, PlusCircle } from 'lucide-react';
+import { Send, ArrowUp, Loader } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 
 export default function ChatArea({
   activeSession,
   isTyping,
   isSearching,
+  streamingText,
   input,
   setInput,
   sendMessage,
-  sessions
 }) {
   const scrollRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeSession?.messages, isTyping]);
+  }, [activeSession?.messages, isTyping, isSearching, streamingText]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -27,8 +27,17 @@ export default function ChatArea({
     }
   };
 
+  // Auto-resize textarea
+  const handleInput = (e) => {
+    setInput(e.target.value);
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+    }
+  };
+
   const handleRegenerate = () => {
-    // Basic placeholder for regenerate logic triggering last prompt
     const userMessages = activeSession?.messages.filter(m => m.sender === 'user');
     if (userMessages && userMessages.length > 0) {
       const lastUserMsg = userMessages[userMessages.length - 1];
@@ -36,91 +45,106 @@ export default function ChatArea({
     }
   };
 
+  const suggestions = [
+    { text: "What can Sogni SDK do?", icon: "🚀" },
+    { text: "How do I generate images?", icon: "🎨" },
+    { text: "Explain ACE-Step audio", icon: "🎵" },
+    { text: "List available models", icon: "📋" }
+  ];
+
+  const isWelcome = activeSession?.messages.length <= 1;
+
   return (
     <>
-      {activeSession?.messages.length <= 1 ? (
-        <motion.div 
-          layout 
-          initial={{ opacity: 0, scale: 0.95 }} 
-          animate={{ opacity: 1, scale: 1 }} 
-          transition={{ type: "spring", stiffness: 100, damping: 20 }}
-          className="welcome-screen flex-1 flex flex-col justify-center items-center"
-        >
-          <h1 className="text-4xl font-semibold mb-8 text-[var(--text-main)] tracking-tight">Welcome back!</h1>
-          <motion.div 
-            whileHover={{ scale: 1.02, y: -2 }}
-            whileTap={{ scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            className="welcome-suggestion" 
-            onClick={() => sendMessage("What can you help me create?")}
-          >
-            What can you help me create?
-          </motion.div>
-        </motion.div>
-      ) : (
-        <div className="messages-area flex-1 overflow-y-auto p-8 flex flex-col items-center w-full" ref={scrollRef}>
-          <AnimatePresence mode="popLayout">
-            {activeSession?.messages.map((msg, idx) => {
-              if (idx === 0) return null; // Skip boilerplate
-              return (
-                <MessageBubble 
-                  key={msg.id} 
-                  msg={msg} 
-                  onRegenerate={handleRegenerate}
-                />
-              );
-            })}
-            {(isTyping || isSearching) && (
-              <motion.div 
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="message-row flex flex-col items-start w-full max-w-4xl mb-8"
+      {isWelcome ? (
+        <div className="welcome-screen">
+          <h1>What can I help with?</h1>
+          <p>Ask me anything about the Sogni SDK — image generation, video, audio, models, and the Supernet.</p>
+          <div className="suggestions-grid">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                className="welcome-suggestion"
+                onClick={() => sendMessage(s.text)}
               >
-                <div className="bubble text-[var(--text-muted)]">
-                  <motion.div 
-                    animate={{ opacity: [0.4, 1, 0.4] }} 
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                    className="flex items-center gap-2"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse" />
-                    {isSearching ? "Researching Sogni SDK Docs..." : "Sogni is thinking..."}
-                  </motion.div>
+                <span style={{ marginRight: '0.5rem' }}>{s.icon}</span>
+                {s.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="messages-area" ref={scrollRef}>
+          {activeSession?.messages.map((msg, idx) => {
+            if (idx === 0) return null;
+            return (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                onRegenerate={handleRegenerate}
+              />
+            );
+          })}
+
+          {/* Streaming message */}
+          {streamingText && (
+            <MessageBubble
+              msg={{ id: 'streaming', text: streamingText, sender: 'bot' }}
+              isStreaming={true}
+            />
+          )}
+
+          {/* Step indicators */}
+          {(isTyping || isSearching) && !streamingText && (
+            <div className="message-row">
+              <div className="message-content-wrapper">
+                <div className="message-avatar assistant">
+                  <Loader size={14} style={{ animation: 'spin 1.5s linear infinite' }} />
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <div className="message-body">
+                  <div className="message-sender-name">Sogni</div>
+                  {isSearching ? (
+                    <div className="step-indicator searching">
+                      <div className="step-icon">
+                        <Loader size={14} />
+                      </div>
+                      <span>Searching documentation…</span>
+                    </div>
+                  ) : (
+                    <div className="typing-indicator">
+                      <div className="typing-dots">
+                        <span></span><span></span><span></span>
+                      </div>
+                      <span>Thinking…</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="input-container w-full flex justify-center p-8 relative z-20">
-        <motion.div layout className="input-pill w-full max-w-4xl bg-[var(--bg-card)] backdrop-blur-md border border-[var(--border-color)] rounded-full flex items-center px-5 py-3 gap-4 shadow-[var(--diffusion-shadow)] transition-colors duration-300 focus-within:border-white/20">
-          <button className="input-action-btn flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
-            <PlusCircle size={20} />
-          </button>
-          <input 
-            type="text" 
-            placeholder="Send a message to Sogni..." 
+      {/* Input Bar */}
+      <div className="input-container">
+        <div className="input-box">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            placeholder="Message Sogni…"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInput}
             onKeyDown={handleKeyDown}
             disabled={isTyping}
-            className="flex-1 bg-transparent border-none text-[var(--text-main)] text-base outline-none min-h-[24px]"
-            style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none' }}
           />
-          <button 
-            className="send-btn-circle w-10 h-10 rounded-full flex items-center justify-center border shadow-[var(--glass-shadow)] transition-all"
+          <button
+            className="send-btn"
             onClick={() => sendMessage()}
             disabled={isTyping || !input.trim()}
-            style={{ 
-              background: input.trim() ? 'white' : '#444', 
-              color: input.trim() ? 'black' : 'var(--text-muted)',
-              borderColor: 'var(--border-color)'
-            }}
           >
-            <Send size={16} />
+            <ArrowUp size={16} />
           </button>
-        </motion.div>
+        </div>
       </div>
     </>
   );

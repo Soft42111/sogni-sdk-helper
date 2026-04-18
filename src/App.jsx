@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageSquare, Key, User, Lock, LogIn, Menu, X } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageSquare, Key, User, Lock, LogIn, Menu, X, Zap, Sun, Moon } from 'lucide-react';
 import { SogniClient } from '@sogni-ai/sogni-client';
 import { getResponse } from './constants/sdk-info';
 import { SOGNI_KNOWLEDGE_BASE } from './constants/sogni-knowledge';
@@ -9,7 +8,6 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 
 // --- CORS PROXY PATCH ---
-// Intercept all requests to https://api.sogni.ai and redirect them to Vite's proxy 
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
@@ -19,7 +17,7 @@ window.fetch = async (...args) => {
     if (r instanceof Request) return r.url;
     return '';
   };
-  
+
   const url = getUrl(resource);
   if (url.startsWith('https://api.sogni.ai')) {
     const newUrl = url.replace('https://api.sogni.ai', '/sogni-api');
@@ -39,8 +37,22 @@ const SOGNI_DOC_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'search_sogni_docs',
+      description: 'Search documentation via keyword/phrase. Returns concise, relevant excerpts. Always try searching FIRST before listing or reading full pages.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Specific keyword or phrase to search for (e.g. "image generation", "ACE_STEP")' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_sogni_docs',
-      description: 'Returns a list of all 64 Sogni SDK documentation volumes (filenames and titles). Use this to see what topics are available.',
+      description: 'Returns a list of all documentation filenames. Use this to browse available volume topics.',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -48,11 +60,11 @@ const SOGNI_DOC_TOOLS = [
     type: 'function',
     function: {
       name: 'read_sogni_doc',
-      description: 'Reads the full content of a specific Sogni SDK documentation volume. Requires the exact filename (e.g., "VOL_01_MANIFESTO.md").',
+      description: 'Reads the FULL content of a documentation volume by its exact filename. High context cost—use sparingly.',
       parameters: {
         type: 'object',
         properties: {
-          filename: { type: 'string', description: 'The exact filename to read' }
+          filename: { type: 'string', description: 'The exact filename (e.g. "VOL_01_MANIFESTO.md")' }
         },
         required: ['filename']
       }
@@ -77,7 +89,7 @@ function TurnstileWidget({ onVerify }) {
 }
 
 function AuthScreen({ onAuthenticate }) {
-  const [authType, setAuthType] = useState('apikey'); // 'apikey' or 'login'
+  const [authType, setAuthType] = useState('apikey');
   const [isSignup, setIsSignup] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [username, setUsername] = useState('');
@@ -99,20 +111,14 @@ function AuthScreen({ onAuthenticate }) {
       if (isSignup) {
         if (!username || !email || !password) throw new Error("All fields are required");
         if (password !== confirmPassword) throw new Error("Passwords do not match");
-        if (!turnstileToken) throw new Error("Please provide a Turnstile token");
+        if (!turnstileToken) throw new Error("Please complete the verification");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
         const result = await client.account.create({
-          username,
-          email,
-          password,
-          turnstileToken,
-          referralCode
+          username, email, password, turnstileToken, referralCode
         });
-        
-        if (result?.error) throw new Error(result.error);
 
-        // Save for persistence
+        if (result?.error) throw new Error(result.error);
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
       } else if (authType === 'apikey') {
         if (!apiKey.trim()) throw new Error("API Key is required");
@@ -142,59 +148,58 @@ function AuthScreen({ onAuthenticate }) {
   };
 
   return (
-    <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        style={{ width: isSignup ? '450px' : '400px', background: 'rgba(10, 11, 16, 0.9)', padding: '2rem', borderRadius: '16px', border: '1px solid var(--glass-border)', boxShadow: 'var(--neon-shadow)', backdropFilter: 'blur(10px)' }}
-      >
-        <div className="logo" style={{ justifyContent: 'center', marginBottom: '2rem' }}>
-          <Terminal className="text-accent-primary" />
-          {isSignup ? 'CREATE SOGNI ACCOUNT' : 'SOGNI AI LOGIN'}
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-title">
+          <div className="auth-title-icon">
+            <Zap size={20} />
+          </div>
+          <h2>{isSignup ? 'Create Account' : 'Welcome back'}</h2>
+          <p>{isSignup ? 'Sign up for Sogni Supernet' : 'Sign in to Sogni SDK Helper'}</p>
         </div>
 
         {!isSignup && (
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div className="auth-tabs">
             <button
               type="button"
+              className={`auth-tab ${authType === 'apikey' ? 'active' : ''}`}
               onClick={() => setAuthType('apikey')}
-              style={{ flex: 1, background: authType === 'apikey' ? 'rgba(99, 102, 241, 0.2)' : 'transparent', border: '1px solid', borderColor: authType === 'apikey' ? 'var(--accent-primary)' : 'var(--glass-border)', color: authType === 'apikey' ? 'var(--accent-primary)' : 'var(--text-muted)', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
             >
-              <Key size={18} /> API Key
+              <Key size={14} /> API Key
             </button>
             <button
               type="button"
+              className={`auth-tab ${authType === 'login' ? 'active' : ''}`}
               onClick={() => setAuthType('login')}
-              style={{ flex: 1, background: authType === 'login' ? 'rgba(168, 85, 247, 0.2)' : 'transparent', border: '1px solid', borderColor: authType === 'login' ? 'var(--accent-secondary)' : 'var(--glass-border)', color: authType === 'login' ? 'var(--accent-secondary)' : 'var(--text-muted)', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
             >
-              <User size={18} /> Account
+              <User size={14} /> Account
             </button>
           </div>
         )}
 
-        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '0.5rem', borderRadius: '4px' }}>{error}</div>}
+        <form className="auth-form" onSubmit={handleAuth}>
+          {error && <div className="auth-error">{error}</div>}
 
           {isSignup ? (
             <>
               <div className="input-wrapper">
-                <User size={18} color="var(--text-muted)" />
+                <User size={16} color="var(--text-tertiary)" />
                 <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
               </div>
               <div className="input-wrapper">
-                <Search size={18} color="var(--text-muted)" />
+                <Search size={16} color="var(--text-tertiary)" />
                 <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="input-wrapper">
-                <Lock size={18} color="var(--text-muted)" />
+                <Lock size={16} color="var(--text-tertiary)" />
                 <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
               <div className="input-wrapper">
-                <Lock size={18} color="var(--text-muted)" />
+                <Lock size={16} color="var(--text-tertiary)" />
                 <input type="password" placeholder="Re-enter Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
               </div>
               <div className="input-wrapper">
-                <PlusCircle size={18} color="var(--text-muted)" />
+                <PlusCircle size={16} color="var(--text-tertiary)" />
                 <input type="text" placeholder="Referral Code (Optional)" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
               </div>
               <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
@@ -202,7 +207,7 @@ function AuthScreen({ onAuthenticate }) {
           ) : (
             authType === 'apikey' ? (
               <div className="input-wrapper">
-                <Key size={18} color="var(--text-muted)" />
+                <Key size={16} color="var(--text-tertiary)" />
                 <input
                   type="password"
                   placeholder="Sogni API Key"
@@ -213,7 +218,7 @@ function AuthScreen({ onAuthenticate }) {
             ) : (
               <>
                 <div className="input-wrapper">
-                  <User size={18} color="var(--text-muted)" />
+                  <User size={16} color="var(--text-tertiary)" />
                   <input
                     type="text"
                     placeholder="Username"
@@ -222,7 +227,7 @@ function AuthScreen({ onAuthenticate }) {
                   />
                 </div>
                 <div className="input-wrapper">
-                  <Lock size={18} color="var(--text-muted)" />
+                  <Lock size={16} color="var(--text-tertiary)" />
                   <input
                     type="password"
                     placeholder="Password"
@@ -236,23 +241,20 @@ function AuthScreen({ onAuthenticate }) {
 
           <button
             type="submit"
+            className="auth-submit-btn"
             disabled={isLoading || (isSignup && !turnstileToken)}
-            style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '1rem', border: 'none', borderRadius: '12px', cursor: (isLoading || (isSignup && !turnstileToken)) ? 'not-allowed' : 'pointer', fontWeight: 600, marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: (isSignup && !turnstileToken) ? 0.5 : 1 }}
           >
-            {isLoading ? 'Processing...' : (isSignup ? 'Register Account' : <><LogIn size={18} /> Enter Supernet</>)}
+            {isLoading ? 'Connecting…' : (isSignup ? 'Create Account' : <><LogIn size={16} /> Sign in</>)}
           </button>
         </form>
 
-        <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+        <div className="auth-footer">
           {isSignup ? "Already have an account?" : "Don't have an account?"}{' '}
-          <button
-            onClick={() => setIsSignup(!isSignup)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 500, textDecoration: 'underline' }}
-          >
+          <button onClick={() => setIsSignup(!isSignup)}>
             {isSignup ? 'Sign In' : 'Sign Up'}
           </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -260,6 +262,20 @@ function AuthScreen({ onAuthenticate }) {
 function App() {
   const [sogniClient, setSogniClient] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // Theme
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('sogni_theme') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('sogni_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  }, []);
 
   useEffect(() => {
     const autoLogin = async () => {
@@ -286,7 +302,12 @@ function App() {
   }, []);
 
   if (isInitializing) {
-    return <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>Initializing Sogni SDK...</div>;
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        Connecting to Sogni Supernet…
+      </div>
+    );
   }
 
   if (!sogniClient) {
@@ -295,14 +316,13 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('sogni_auth');
-    // We only clear auth, NOT sessions, to preserve chat history
     setSogniClient(null);
   };
 
-  return <ChatApp sogni={sogniClient} onLogout={handleLogout} />;
+  return <ChatApp sogni={sogniClient} onLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />;
 }
 
-function ChatApp({ sogni, onLogout }) {
+function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
   const defaultMessage = { id: 1, text: "Welcome to Sogni SDK Helper. How can I assist?", sender: 'bot' };
 
   const getInitialSessions = () => {
@@ -325,11 +345,9 @@ function ChatApp({ sogni, onLogout }) {
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [chatCurrency, setChatCurrency] = useState('sparks');
-  const [balances, setBalances] = useState({ sparks: '0.00', sogni: '0.00' });
   const [isSearching, setIsSearching] = useState(false);
-  const scrollRef = useRef(null);
+  const [streamingText, setStreamingText] = useState('');
+  const [balances, setBalances] = useState({ sparks: '0.00', sogni: '0.00' });
 
   const fetchBalances = async () => {
     if (!sogni) return;
@@ -356,19 +374,8 @@ function ChatApp({ sogni, onLogout }) {
     localStorage.setItem('sogni_active_session', activeSessionId);
   }, [sessions, activeSessionId]);
 
-  // Scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [sessions, activeSessionId, isTyping]);
-
   const updateSessionMessages = (sessionId, newMessages) => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, messages: newMessages } : s));
-  };
-
-  const updateSessionName = (sessionId, newName) => {
-    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: newName } : s));
   };
 
   const createNewChat = () => {
@@ -390,28 +397,37 @@ function ChatApp({ sogni, onLogout }) {
     }
   };
 
+  // Safely extract a message from the Sogni API response
+  const extractMessage = (response) => {
+    if (response?.choices?.[0]?.message) return response.choices[0].message;
+    if (response?.message) return response.message;
+    if (response?.content) return response;
+    if (response?.text) return { content: response.text };
+    return null;
+  };
+
   const generateAITitle = async (userText, sessionId) => {
     if (!sogni) return;
-
     try {
       const res = await sogni.chat.completions.create({
         model: 'qwen3.5-35b-a3b-gguf-q4km',
         messages: [
-          {
-            role: 'system',
-            content: `You are a title generator. Generate a 2-3 word chat title for a conversation starting with: "${userText}". Return ONLY the plain text title. No quotes, no prefix.`
-          }
+          { role: 'system', content: 'Generate a very short 2-4 word title for a chat conversation. Return ONLY the title text, nothing else. No quotes, no prefix, no explanation. Do not use <think> tags.' },
+          { role: 'user', content: userText }
         ],
-        max_tokens: 15
+        max_tokens: 20
       });
 
-      let titleText = res?.choices?.[0]?.message?.content || res?.message?.content || res?.text;
-
+      const msg = extractMessage(res);
+      let titleText = msg?.content || '';
       if (titleText) {
+        // Strip thinking blocks if the model still sends them
         let mainTitle = titleText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-        mainTitle = mainTitle.replace(/['"]+|^TITLE:|^Title:|\.$/g, '').trim();
-
-        if (mainTitle && mainTitle.length > 2) {
+        // Clean up any quotes or prefixes
+        mainTitle = mainTitle.replace(/^['"`]+|['"`]+$/g, '').trim();
+        mainTitle = mainTitle.replace(/^(TITLE|Title|title)\s*:\s*/i, '').trim();
+        mainTitle = mainTitle.replace(/\.+$/, '').trim();
+        if (mainTitle && mainTitle.length > 1 && mainTitle.length < 60) {
           setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: mainTitle } : s));
         }
       }
@@ -432,9 +448,9 @@ function ChatApp({ sogni, onLogout }) {
     updateSessionMessages(currentSessionId, newMessages);
     setInput('');
     setIsTyping(true);
+    setStreamingText('');
 
     if (isFirstUserMessage) {
-      // Running Title Generation Non-Blocking
       generateAITitle(messageText, currentSessionId);
     }
 
@@ -448,48 +464,183 @@ function ChatApp({ sogni, onLogout }) {
 
       let isLooping = true;
       let finalBotText = "";
+      let loopCount = 0;
+      const MAX_TOOL_LOOPS = 5;
 
-      while (isLooping) {
-        const response = await sogni.chat.completions.create({
-          model: 'qwen3.5-35b-a3b-gguf-q4km',
-          messages: apiMessages,
-          tools: SOGNI_DOC_TOOLS,
-          tool_choice: 'auto',
-          max_tokens: 4096
-        });
+      while (isLooping && loopCount < MAX_TOOL_LOOPS) {
+        loopCount++;
 
-        const choice = response.choices[0];
-        const message = choice.message;
+        // Try streaming first
+        let response;
+        let usedStreaming = false;
 
-        if (message.tool_calls) {
-          setIsSearching(true);
-          apiMessages.push(message);
+        try {
+          response = await sogni.chat.completions.create({
+            model: 'qwen3.5-35b-a3b-gguf-q4km',
+            messages: apiMessages,
+            tools: SOGNI_DOC_TOOLS,
+            tool_choice: 'auto',
+            max_tokens: 4096,
+            stream: true
+          });
 
-          for (const toolCall of message.tool_calls) {
-            const funcName = toolCall.function.name;
-            const args = JSON.parse(toolCall.function.arguments);
-            let result = "";
+          // If response is an async iterable (streaming), process it
+          if (response && typeof response[Symbol.asyncIterator] === 'function') {
+            usedStreaming = true;
+            let fullContent = '';
+            let toolCalls = [];
+            let currentToolCall = null;
 
-            if (funcName === 'list_sogni_docs') {
-              result = JSON.stringify(Object.keys(sogniDocs));
-            } else if (funcName === 'read_sogni_doc') {
-              result = sogniDocs[args.filename] || "Document not found.";
+            for await (const chunk of response) {
+              const delta = chunk?.choices?.[0]?.delta;
+              if (!delta) continue;
+
+              // Handle streaming text content
+              if (delta.content) {
+                fullContent += delta.content;
+                // Show streaming text, stripping thinking blocks for display
+                const displayText = fullContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+                setStreamingText(displayText);
+              }
+
+              // Handle streaming tool calls
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  if (tc.index !== undefined) {
+                    if (!toolCalls[tc.index]) {
+                      toolCalls[tc.index] = {
+                        id: tc.id || '',
+                        function: { name: '', arguments: '' }
+                      };
+                    }
+                    if (tc.id) toolCalls[tc.index].id = tc.id;
+                    if (tc.function?.name) toolCalls[tc.index].function.name += tc.function.name;
+                    if (tc.function?.arguments) toolCalls[tc.index].function.arguments += tc.function.arguments;
+                  }
+                }
+              }
             }
 
-            apiMessages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: result
-            });
+            // After streaming ends
+            if (toolCalls.length > 0) {
+              // Handle tool calls
+              setIsSearching(true);
+              setStreamingText('');
+              const assistantMsg = { role: 'assistant', content: fullContent || null, tool_calls: toolCalls };
+              apiMessages.push(assistantMsg);
+
+              for (const toolCall of toolCalls) {
+                const funcName = toolCall.function?.name;
+                let args = {};
+                try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (e) { /* ignore */ }
+                let result = '';
+
+                if (funcName === 'search_sogni_docs') {
+                  const q = (args.query || '').toLowerCase();
+                  const results = [];
+                  for (const [filename, content] of Object.entries(sogniDocs)) {
+                    const idx = content.toLowerCase().indexOf(q);
+                    if (filename.toLowerCase().includes(q) || idx !== -1) {
+                      const start = Math.max(0, idx !== -1 ? idx - 150 : 0);
+                      const end = Math.min(content.length, idx !== -1 ? idx + 500 : 500);
+                      results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
+                    }
+                  }
+                  result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
+                } else if (funcName === 'list_sogni_docs') {
+                  result = JSON.stringify(Object.keys(sogniDocs));
+                } else if (funcName === 'read_sogni_doc') {
+                  result = sogniDocs[args.filename] || 'Document not found.';
+                } else {
+                  result = 'Unknown tool: ' + funcName;
+                }
+
+                apiMessages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: result
+                });
+              }
+              // Loop to get the final response after tool use
+              continue;
+            } else {
+              finalBotText = fullContent;
+              isLooping = false;
+            }
           }
-          // Continue loop to let LLM process tool results
-        } else {
-          finalBotText = message.content;
-          isLooping = false;
+        } catch (streamErr) {
+          // Streaming failed, fall back to non-streaming
+          console.warn("Streaming not supported, falling back:", streamErr.message);
+          usedStreaming = false;
+        }
+
+        // Non-streaming fallback
+        if (!usedStreaming) {
+          response = await sogni.chat.completions.create({
+            model: 'qwen3.5-35b-a3b-gguf-q4km',
+            messages: apiMessages,
+            tools: SOGNI_DOC_TOOLS,
+            tool_choice: 'auto',
+            max_tokens: 4096
+          });
+
+          const message = extractMessage(response);
+          if (!message) {
+            console.error('Unexpected API response shape:', response);
+            finalBotText = "The Sogni Supernet returned an unexpected response. Please try again.";
+            isLooping = false;
+            break;
+          }
+
+          if (message.tool_calls && message.tool_calls.length > 0) {
+            setIsSearching(true);
+            apiMessages.push(message);
+
+            for (const toolCall of message.tool_calls) {
+              const funcName = toolCall.function?.name;
+              let args = {};
+              try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (e) { /* ignore */ }
+              let result = '';
+
+              if (funcName === 'search_sogni_docs') {
+                const q = (args.query || '').toLowerCase();
+                const results = [];
+                for (const [filename, content] of Object.entries(sogniDocs)) {
+                  const idx = content.toLowerCase().indexOf(q);
+                  if (filename.toLowerCase().includes(q) || idx !== -1) {
+                    const start = Math.max(0, idx !== -1 ? idx - 150 : 0);
+                    const end = Math.min(content.length, idx !== -1 ? idx + 500 : 500);
+                    results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
+                  }
+                }
+                result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
+              } else if (funcName === 'list_sogni_docs') {
+                result = JSON.stringify(Object.keys(sogniDocs));
+              } else if (funcName === 'read_sogni_doc') {
+                result = sogniDocs[args.filename] || 'Document not found.';
+              } else {
+                result = 'Unknown tool: ' + funcName;
+              }
+
+              apiMessages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: result
+              });
+            }
+          } else {
+            finalBotText = message.content || '';
+            isLooping = false;
+          }
         }
       }
 
+      if (loopCount >= MAX_TOOL_LOOPS && isLooping) {
+        finalBotText = 'I researched the documentation but hit the maximum lookup limit. Here is what I found so far — please try a more specific question.';
+      }
+
       setIsSearching(false);
+      setStreamingText('');
       fetchBalances();
 
       let botText = finalBotText;
@@ -508,6 +659,7 @@ function ChatApp({ sogni, onLogout }) {
     } catch (err) {
       console.error("Supernet connection failure:", err);
       let errorMsg = err.message || "An unknown network error occurred.";
+      setStreamingText('');
       setSessions(prev => prev.map(s => {
         if (s.id === currentSessionId) {
           return { ...s, messages: [...s.messages, { id: Date.now() + 1, text: `[SYSTEM ERROR] Failed to connect to Sogni Supernet: ${errorMsg}`, sender: 'bot' }] };
@@ -516,11 +668,8 @@ function ChatApp({ sogni, onLogout }) {
       }));
     } finally {
       setIsTyping(false);
+      setStreamingText('');
     }
-  };
-
-  const handleNavClick = (label) => {
-    sendMessage(`Tell me about ${label} in Sogni SDK`);
   };
 
   return (
@@ -535,61 +684,26 @@ function ChatApp({ sogni, onLogout }) {
         createNewChat={createNewChat}
         setActiveSessionId={setActiveSessionId}
         deleteChat={deleteChat}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        onLogout={onLogout}
       />
 
       <main className="chat-main">
         <header className="top-header">
           <div className="header-left">
             <button className="mobile-menu-btn" onClick={() => setIsSidebarOpen(true)}>
-              <Menu size={24} />
+              <Menu size={20} />
             </button>
-            {isSidebarHidden && (
-              <Layout size={20} color="var(--text-muted)" style={{ cursor: 'pointer', marginRight: '1rem', display: window.innerWidth < 768 ? 'none' : 'block' }} onClick={() => setIsSidebarHidden(false)} />
-            )}
-            <span>Sogni SDK Helper Agent</span>
-          </div>
-          <div className="header-right" style={{ position: 'relative' }}>
-            <div
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            >
-              soft4211 <User size={16} />
+            <div className="model-badge">
+              <span className="dot"></span>
+              Sogni SDK Helper
             </div>
-            {isDropdownOpen && (
-              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', whiteSpace: 'nowrap', zIndex: 100, boxShadow: 'var(--diffusion-shadow)', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: '200px' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                   <div style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: '0.9rem' }}>{balances.sparks} Sparks</div>
-                   <div style={{ color: 'var(--accent-secondary)', fontWeight: 700, fontSize: '0.9rem' }}>{balances.sogni} Sogni</div>
-                </div>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                  <input
-                    type="radio"
-                    name="currency"
-                    checked={chatCurrency === 'sparks'}
-                    onChange={() => setChatCurrency('sparks')}
-                  />
-                  <span>Pay with Sparks</span>
-                </label>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                  <input
-                    type="radio"
-                    name="currency"
-                    checked={chatCurrency === 'sogni'}
-                    onChange={() => setChatCurrency('sogni')}
-                  />
-                  <span>Pay with Sogni</span>
-                </label>
-
-                <button
-                  onClick={onLogout}
-                  style={{ width: '100%', marginTop: '0.25rem', padding: '0.6rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
-                >
-                  Logout (Keep Chats)
-                </button>
-              </div>
-            )}
+          </div>
+          <div className="header-right">
+            <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
         </header>
 
@@ -597,14 +711,11 @@ function ChatApp({ sogni, onLogout }) {
           activeSession={activeSession}
           isTyping={isTyping}
           isSearching={isSearching}
+          streamingText={streamingText}
           input={input}
           setInput={setInput}
           sendMessage={sendMessage}
-          sessions={sessions}
         />
-
-        <div className="swipe-bar"></div>
-        <div className="alpha-label">ALPHA V1.1.0</div>
       </main>
     </div>
   );
