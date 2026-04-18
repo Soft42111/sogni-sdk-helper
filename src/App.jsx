@@ -498,9 +498,8 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               // Handle streaming text content
               if (delta.content) {
                 fullContent += delta.content;
-                // Show streaming text, stripping thinking blocks for display
-                const displayText = fullContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-                setStreamingText(displayText);
+                // Pass full content to UI immediately, MessageBubble handles the <think> extraction
+                setStreamingText(fullContent);
               }
 
               // Handle streaming tool calls
@@ -646,9 +645,10 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       let botText = finalBotText;
       if (typeof botText !== 'string') {
         botText = "The Sogni model responded, but the data format was unreadable.";
-      } else {
-        botText = botText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
       }
+      
+      // Do NOT strip <think> here so MessageBubble can display it
+      botText = botText.trim();
 
       setSessions(prev => prev.map(s => {
         if (s.id === currentSessionId) {
