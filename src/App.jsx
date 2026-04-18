@@ -220,7 +220,7 @@ function AuthScreen({ onAuthenticate }) {
                 <PlusCircle size={16} color="var(--text-tertiary)" />
                 <input type="text" placeholder="Referral Code (Optional)" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
               </div>
-              <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
+              <TurnstileWidget onVerify={setTurnstileToken} />
             </>
           ) : (
             authType === 'apikey' ? (
