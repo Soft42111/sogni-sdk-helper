@@ -76,14 +76,30 @@ function TurnstileWidget({ onVerify }) {
   const widgetRef = useRef(null);
 
   useEffect(() => {
-    if (window.turnstile && widgetRef.current) {
-      window.turnstile.render(widgetRef.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        callback: (token) => onVerify(token),
-        theme: 'dark'
-      });
+    let widgetId;
+    const renderWidget = () => {
+      if (window.turnstile && widgetRef.current) {
+        widgetId = window.turnstile.render(widgetRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token) => onVerify(token),
+          theme: 'dark'
+        });
+      }
+    };
+
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      // If script not loaded yet, wait for it
+      window.onloadTurnstileCallback = renderWidget;
     }
-  }, []);
+
+    return () => {
+      if (window.turnstile && widgetId !== undefined) {
+        window.turnstile.remove(widgetId);
+      }
+    };
+  }, [onVerify]);
 
   return <div ref={widgetRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}></div>;
 }
@@ -114,9 +130,11 @@ function AuthScreen({ onAuthenticate }) {
         if (!turnstileToken) throw new Error("Please complete the verification");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        const result = await client.account.create({
-          username, email, password, turnstileToken, referralCode
-        });
+        const signupParams = { username, email, password, turnstileToken, subscribe: false };
+        if (referralCode && referralCode.trim() !== '') {
+          signupParams.referralCode = referralCode.trim();
+        }
+        const result = await client.account.create(signupParams);
 
         if (result?.error) throw new Error(result.error);
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
@@ -441,20 +459,27 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
           { role: 'system', content: 'Generate a very short 2-4 word title for a chat conversation. Return ONLY the title text, nothing else. No quotes, no prefix, no explanation. Do not use <think> tags.' },
           { role: 'user', content: userText }
         ],
-        max_tokens: 20,
+        max_tokens: 80,
         stream: false
       });
 
       const msg = extractMessage(res);
       let titleText = msg?.content || '';
       if (titleText) {
-        // Strip thinking blocks if the model still sends them
+        // Strip thinking blocks
         let mainTitle = titleText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-        // Clean up any quotes or prefixes
+        // Clean up any conversational prefixes
+        mainTitle = mainTitle.replace(/^(here is the title|title|chat title|suggested title|the title is)[\s]*:?\s*/i, '').trim();
         mainTitle = mainTitle.replace(/^['"`]+|['"`]+$/g, '').trim();
-        mainTitle = mainTitle.replace(/^(TITLE|Title|title)\s*:\s*/i, '').trim();
         mainTitle = mainTitle.replace(/\.+$/, '').trim();
-        if (mainTitle && mainTitle.length > 1 && mainTitle.length < 60) {
+        
+        if (!mainTitle) {
+          // Fallback if the AI generation failed or stripped to nothing
+          const extractedUserPrompt = userText.split('\n')[0].replace('User: ', '').trim();
+          mainTitle = extractedUserPrompt.substring(0, 25) + (extractedUserPrompt.length > 25 ? '...' : '');
+        }
+
+        if (mainTitle && mainTitle.length > 1 && mainTitle.length < 80) {
           setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: mainTitle } : s));
         }
       }
