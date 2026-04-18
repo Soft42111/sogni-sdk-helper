@@ -292,8 +292,9 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     if (savedId && initSessions.find(s => s.id === savedId)) return savedId;
     return initSessions[0].id;
   });
-
   const [input, setInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState('qwen3.5-35b-a3b-gguf-q4km');
+
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -377,7 +378,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     if (!sogni) return;
     try {
       const res = await sogni.chat.completions.create({
-        model: 'qwen3.5-35b-a3b-gguf-q4km',
+        model: selectedModel,
         messages: [
           { role: 'user', content: `Generate a short, clear title for this conversation.\n\nConstraints:\n- 3 to 6 words\n- No punctuation\n- No filler words\n- Focus on core topic or goal\n- Use natural phrasing\n\nConversation:\n${userText}\n\nReturn only the title.` }
         ],
@@ -454,7 +455,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         loopCount++;
 
         const requestConfig = {
-          model: 'qwen3.5-35b-a3b-gguf-q4km',
+          model: selectedModel,
           messages: apiMessages,
           max_tokens: 4096,
           stream: false
@@ -598,6 +599,15 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
             </div>
           </div>
           <div className="header-right">
+            <select 
+              className="model-selector" 
+              value={selectedModel} 
+              onChange={(e) => setSelectedModel(e.target.value)}
+              style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-sunken)', color: 'var(--text-primary)', border: '1px solid var(--border)', marginRight: '1rem', fontSize: '0.85rem' }}
+            >
+              <option value="qwen3.5-35b-a3b-gguf-q4km">Qwen 3.5 (Aligned)</option>
+              <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Qwen 3.5 (Abliterated)</option>
+            </select>
             <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
