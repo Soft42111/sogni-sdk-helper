@@ -31,7 +31,7 @@ window.fetch = async (...args) => {
 };
 // ------------------------
 
-const TURNSTILE_SITE_KEY = '0x4AAAAAAC-9sNk_20dEkOAn';
+const TURNSTILE_SITE_KEY = '0x4AAAAAABA3JGUSIHxBNhO5';
 
 const SOGNI_DOC_TOOLS = [
   {
@@ -72,7 +72,7 @@ const SOGNI_DOC_TOOLS = [
   }
 ];
 
-function TurnstileWidget({ onVerify }) {
+function TurnstileWidget({ onVerify, onError }) {
   const widgetRef = useRef(null);
 
   useEffect(() => {
@@ -81,7 +81,18 @@ function TurnstileWidget({ onVerify }) {
       if (window.turnstile && widgetRef.current) {
         widgetId = window.turnstile.render(widgetRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => onVerify(token),
+          callback: (token) => {
+            console.log('[Turnstile] Token received:', token.substring(0, 20) + '...');
+            onVerify(token);
+          },
+          'error-callback': () => {
+            console.error('[Turnstile] Widget error');
+            if (onError) onError('Turnstile verification error. This domain may not be authorized.');
+          },
+          'expired-callback': () => {
+            console.warn('[Turnstile] Token expired, clearing');
+            onVerify('');
+          },
           theme: 'dark'
         });
       }
@@ -90,7 +101,6 @@ function TurnstileWidget({ onVerify }) {
     if (window.turnstile) {
       renderWidget();
     } else {
-      // If script not loaded yet, wait for it
       window.onloadTurnstileCallback = renderWidget;
     }
 
@@ -99,7 +109,7 @@ function TurnstileWidget({ onVerify }) {
         window.turnstile.remove(widgetId);
       }
     };
-  }, [onVerify]);
+  }, [onVerify, onError]);
 
   return <div ref={widgetRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}></div>;
 }
@@ -134,9 +144,8 @@ function AuthScreen({ onAuthenticate }) {
         if (referralCode && referralCode.trim() !== '') {
           signupParams.referralCode = referralCode.trim();
         }
-        const result = await client.account.create(signupParams);
-
-        if (result?.error) throw new Error(result.error);
+        console.log('[Signup] Sending create request with turnstileToken:', turnstileToken.substring(0, 20) + '...');
+        await client.account.create(signupParams);
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
       } else if (authType === 'apikey') {
         if (!apiKey.trim()) throw new Error("API Key is required");
@@ -158,7 +167,10 @@ function AuthScreen({ onAuthenticate }) {
       onAuthenticate(client);
     } catch (err) {
       console.error("Auth Exception:", err);
-      const errorMsg = err.payload?.message || err.message || 'Authentication failed.';
+      let errorMsg = err.payload?.message || err.message || 'Authentication failed.';
+      if (errorMsg === 'Verification failed' && isSignup) {
+        errorMsg = 'Turnstile verification rejected by server. Please create your account at app.sogni.ai, then log in here.';
+      }
       setError(errorMsg);
     } finally {
       setIsLoading(false);
@@ -220,7 +232,7 @@ function AuthScreen({ onAuthenticate }) {
                 <PlusCircle size={16} color="var(--text-tertiary)" />
                 <input type="text" placeholder="Referral Code (Optional)" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
               </div>
-              <TurnstileWidget onVerify={setTurnstileToken} />
+              <TurnstileWidget onVerify={setTurnstileToken} onError={setError} />
             </>
           ) : (
             authType === 'apikey' ? (
