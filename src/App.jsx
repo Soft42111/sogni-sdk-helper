@@ -21,6 +21,19 @@ window.fetch = async (...args) => {
   const url = getUrl(resource);
   if (url.startsWith('https://api.sogni.ai')) {
     const newUrl = url.replace('https://api.sogni.ai', '/sogni-api');
+    // Log signup-related requests for debugging
+    if (url.includes('/account/')) {
+      console.log('[CORS Proxy]', url, '→', newUrl);
+      if (config?.body) {
+        try {
+          const parsed = JSON.parse(config.body);
+          console.log('[CORS Proxy] Body keys:', Object.keys(parsed));
+          if (parsed.turnstileToken) {
+            console.log('[CORS Proxy] turnstileToken present, length:', parsed.turnstileToken.length);
+          }
+        } catch(e) { /* not JSON */ }
+      }
+    }
     if (resource instanceof Request) {
       resource = new Request(newUrl, resource);
     } else {
@@ -31,7 +44,7 @@ window.fetch = async (...args) => {
 };
 // ------------------------
 
-const TURNSTILE_SITE_KEY = '0x4AAAAAABA3JGUSIHxBNhO5';
+const TURNSTILE_SITE_KEY = '0x4AAAAAAC-9sNk_20dEkOAn';
 
 const SOGNI_DOC_TOOLS = [
   {
@@ -139,13 +152,24 @@ function AuthScreen({ onAuthenticate }) {
         if (password !== confirmPassword) throw new Error("Passwords do not match");
         if (!turnstileToken) throw new Error("Please complete the verification");
 
-        client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
+        // For signup, disable socket (not needed) and go direct to API
+        client = await SogniClient.createInstance({
+          appId: 'sogni-helper-app-1',
+          network: 'fast',
+          disableSocket: true
+        });
         const signupParams = { username, email, password, turnstileToken, subscribe: false };
         if (referralCode && referralCode.trim() !== '') {
           signupParams.referralCode = referralCode.trim();
         }
-        console.log('[Signup] Sending create request with turnstileToken:', turnstileToken.substring(0, 20) + '...');
+        console.log('[Signup] Token length:', turnstileToken.length);
+        console.log('[Signup] Params:', { ...signupParams, password: '***', turnstileToken: turnstileToken.substring(0, 30) + '...' });
         await client.account.create(signupParams);
+        // Dispose the socketless client; we'll create a proper one for the session
+        client.dispose();
+        // Now login with a full client
+        client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
+        await client.account.login(username, password);
         localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
       } else if (authType === 'apikey') {
         if (!apiKey.trim()) throw new Error("API Key is required");
@@ -167,9 +191,14 @@ function AuthScreen({ onAuthenticate }) {
       onAuthenticate(client);
     } catch (err) {
       console.error("Auth Exception:", err);
+      console.error("Error status:", err.status);
+      console.error("Error payload:", JSON.stringify(err.payload, null, 2));
       let errorMsg = err.payload?.message || err.message || 'Authentication failed.';
-      if (errorMsg === 'Verification failed' && isSignup) {
-        errorMsg = 'Turnstile verification rejected by server. Please create your account at app.sogni.ai, then log in here.';
+      if (err.payload?.errorCode) {
+        errorMsg += ` (Code: ${err.payload.errorCode})`;
+      }
+      if (errorMsg.includes('Verification failed') && isSignup) {
+        errorMsg += ' — Try creating your account at app.sogni.ai first, then login here.';
       }
       setError(errorMsg);
     } finally {
