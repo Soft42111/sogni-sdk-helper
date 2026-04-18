@@ -232,20 +232,38 @@ body {
   white-space: nowrap;
 }
 
-.delete-chat-btn {
+.chat-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: all var(--transition-fast);
+}
+
+.action-chat-btn {
   background: none;
   border: none;
   color: var(--text-tertiary);
   cursor: pointer;
   padding: 0.2rem;
   border-radius: var(--radius-xs);
-  opacity: 0;
-  transition: all var(--transition-fast);
   display: flex;
-  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
 }
-.chat-item:hover .delete-chat-btn { opacity: 0.6; }
-.delete-chat-btn:hover { opacity: 1 !important; color: var(--accent-red); }
+
+.chat-item:hover .chat-item-actions {
+  opacity: 1;
+}
+
+.action-chat-btn:hover {
+  color: var(--text-primary);
+}
+
+.action-chat-btn.delete:hover {
+  color: var(--accent-red);
+}
 
 .sidebar-footer {
   padding: 0.5rem 0.25rem;

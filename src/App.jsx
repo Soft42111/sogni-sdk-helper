@@ -114,7 +114,7 @@ function AuthScreen({ onAuthenticate }) {
         if (!turnstileToken) throw new Error("Please complete the verification");
 
         client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        const result = await client.account.create({
+        const result = await client.account.register({
           username, email, password, turnstileToken, referralCode
         });
 
@@ -379,9 +379,35 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
   };
 
   const createNewChat = () => {
-    const newSession = { id: Date.now().toString(), name: "New Chat", messages: [defaultMessage] };
+    let title = window.prompt("What is the title of this chat (leave blank for AI to generate)?");
+    if (title === null) return; // User cancelled
+    
+    title = title.trim();
+    let autoTitle = false;
+    if (!title) {
+      title = "New Chat";
+      autoTitle = true;
+    }
+    if (title.length > 30) title = title.substring(0, 30) + '...';
+
+    const newSession = { id: Date.now().toString(), name: title, autoTitle: autoTitle, messages: [defaultMessage] };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
+  };
+
+  const renameChat = (e, id) => {
+    e.stopPropagation();
+    const sessionToRename = sessions.find(s => s.id === id);
+    if (!sessionToRename) return;
+    
+    let newTitle = window.prompt("Enter new chat name:", sessionToRename.name);
+    if (newTitle !== null) {
+      newTitle = newTitle.trim();
+      if (newTitle.length > 30) newTitle = newTitle.substring(0, 30) + '...';
+      if (newTitle) {
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, name: newTitle } : s));
+      }
+    }
   };
 
   const deleteChat = (e, id) => {
@@ -450,9 +476,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     setIsTyping(true);
     setStreamingText('');
 
-    if (isFirstUserMessage) {
-      generateAITitle(messageText, currentSessionId);
-    }
+    // Title generation moved to occurs AFTER response generation
 
     try {
       if (!sogni) throw new Error("SogniClient not initialized");
@@ -470,167 +494,67 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       while (isLooping && loopCount < MAX_TOOL_LOOPS) {
         loopCount++;
 
-        // Try streaming first
-        let response;
-        let usedStreaming = false;
+        // Always use non-streaming to ensure perfectly stable full message response
+        const response = await sogni.chat.completions.create({
+          model: 'qwen3.5-35b-a3b-gguf-q4km',
+          messages: apiMessages,
+          tools: SOGNI_DOC_TOOLS,
+          tool_choice: 'auto',
+          max_tokens: 4096,
+          stream: false
+        });
 
-        try {
-          response = await sogni.chat.completions.create({
-            model: 'qwen3.5-35b-a3b-gguf-q4km',
-            messages: apiMessages,
-            tools: SOGNI_DOC_TOOLS,
-            tool_choice: 'auto',
-            max_tokens: 4096,
-            stream: true
-          });
-
-          // If response is an async iterable (streaming), process it
-          if (response && typeof response[Symbol.asyncIterator] === 'function') {
-            usedStreaming = true;
-            let fullContent = '';
-            let toolCalls = [];
-            let currentToolCall = null;
-
-            for await (const chunk of response) {
-              const delta = chunk?.choices?.[0]?.delta;
-              if (!delta) continue;
-
-              // Handle streaming text content
-              if (delta.content) {
-                fullContent += delta.content;
-                // Pass full content to UI immediately, MessageBubble handles the <think> extraction
-                setStreamingText(fullContent);
-              }
-
-              // Handle streaming tool calls
-              if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  if (tc.index !== undefined) {
-                    if (!toolCalls[tc.index]) {
-                      toolCalls[tc.index] = {
-                        id: tc.id || '',
-                        function: { name: '', arguments: '' }
-                      };
-                    }
-                    if (tc.id) toolCalls[tc.index].id = tc.id;
-                    if (tc.function?.name) toolCalls[tc.index].function.name += tc.function.name;
-                    if (tc.function?.arguments) toolCalls[tc.index].function.arguments += tc.function.arguments;
-                  }
-                }
-              }
-            }
-
-            // After streaming ends
-            if (toolCalls.length > 0) {
-              // Handle tool calls
-              setIsSearching(true);
-              setStreamingText('');
-              const assistantMsg = { role: 'assistant', content: fullContent || null, tool_calls: toolCalls };
-              apiMessages.push(assistantMsg);
-
-              for (const toolCall of toolCalls) {
-                const funcName = toolCall.function?.name;
-                let args = {};
-                try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (e) { /* ignore */ }
-                let result = '';
-
-                if (funcName === 'search_sogni_docs') {
-                  const q = (args.query || '').toLowerCase();
-                  const results = [];
-                  for (const [filename, content] of Object.entries(sogniDocs)) {
-                    const idx = content.toLowerCase().indexOf(q);
-                    if (filename.toLowerCase().includes(q) || idx !== -1) {
-                      const start = Math.max(0, idx !== -1 ? idx - 150 : 0);
-                      const end = Math.min(content.length, idx !== -1 ? idx + 500 : 500);
-                      results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
-                    }
-                  }
-                  result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
-                } else if (funcName === 'list_sogni_docs') {
-                  result = JSON.stringify(Object.keys(sogniDocs));
-                } else if (funcName === 'read_sogni_doc') {
-                  result = sogniDocs[args.filename] || 'Document not found.';
-                } else {
-                  result = 'Unknown tool: ' + funcName;
-                }
-
-                apiMessages.push({
-                  role: 'tool',
-                  tool_call_id: toolCall.id,
-                  content: result
-                });
-              }
-              // Loop to get the final response after tool use
-              continue;
-            } else {
-              finalBotText = fullContent;
-              isLooping = false;
-            }
-          }
-        } catch (streamErr) {
-          // Streaming failed, fall back to non-streaming
-          console.warn("Streaming not supported, falling back:", streamErr.message);
-          usedStreaming = false;
+        const message = extractMessage(response);
+        if (!message) {
+          console.error('Unexpected API response shape:', response);
+          finalBotText = "The Sogni Supernet returned an unexpected response. Please try again.";
+          isLooping = false;
+          break;
         }
 
-        // Non-streaming fallback
-        if (!usedStreaming) {
-          response = await sogni.chat.completions.create({
-            model: 'qwen3.5-35b-a3b-gguf-q4km',
-            messages: apiMessages,
-            tools: SOGNI_DOC_TOOLS,
-            tool_choice: 'auto',
-            max_tokens: 4096
-          });
+        if (message.tool_calls && message.tool_calls.length > 0) {
+          setIsSearching(true);
+          apiMessages.push(message);
 
-          const message = extractMessage(response);
-          if (!message) {
-            console.error('Unexpected API response shape:', response);
-            finalBotText = "The Sogni Supernet returned an unexpected response. Please try again.";
-            isLooping = false;
-            break;
-          }
+          for (const toolCall of message.tool_calls) {
+            const funcName = toolCall.function?.name;
+            let args = {};
+            try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (e) { /* ignore */ }
+            let result = '';
 
-          if (message.tool_calls && message.tool_calls.length > 0) {
-            setIsSearching(true);
-            apiMessages.push(message);
-
-            for (const toolCall of message.tool_calls) {
-              const funcName = toolCall.function?.name;
-              let args = {};
-              try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (e) { /* ignore */ }
-              let result = '';
-
-              if (funcName === 'search_sogni_docs') {
-                const q = (args.query || '').toLowerCase();
-                const results = [];
-                for (const [filename, content] of Object.entries(sogniDocs)) {
-                  const idx = content.toLowerCase().indexOf(q);
-                  if (filename.toLowerCase().includes(q) || idx !== -1) {
-                    const start = Math.max(0, idx !== -1 ? idx - 150 : 0);
-                    const end = Math.min(content.length, idx !== -1 ? idx + 500 : 500);
-                    results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
-                  }
+            if (funcName === 'search_sogni_docs') {
+              const q = (args.query || '').toLowerCase();
+              const results = [];
+              for (const [filename, content] of Object.entries(sogniDocs)) {
+                const idx = content.toLowerCase().indexOf(q);
+                if (filename.toLowerCase().includes(q) || idx !== -1) {
+                  const start = Math.max(0, idx !== -1 ? idx - 150 : 0);
+                  const end = Math.min(content.length, idx !== -1 ? idx + 500 : 500);
+                  results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
                 }
-                result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
-              } else if (funcName === 'list_sogni_docs') {
-                result = JSON.stringify(Object.keys(sogniDocs));
-              } else if (funcName === 'read_sogni_doc') {
-                result = sogniDocs[args.filename] || 'Document not found.';
-              } else {
-                result = 'Unknown tool: ' + funcName;
               }
-
-              apiMessages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: result
-              });
+              result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
+            } else if (funcName === 'list_sogni_docs') {
+              result = JSON.stringify(Object.keys(sogniDocs));
+            } else if (funcName === 'read_sogni_doc') {
+              result = sogniDocs[args.filename] || 'Document not found.';
+            } else {
+              result = 'Unknown tool: ' + funcName;
             }
-          } else {
-            finalBotText = message.content || '';
-            isLooping = false;
+
+            apiMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: result
+            });
           }
+        } else {
+          finalBotText = '';
+          if (message.reasoning) {
+            finalBotText += `<think>\n${message.reasoning}\n</think>\n`;
+          }
+          finalBotText += message.content || '';
+          isLooping = false;
         }
       }
 
@@ -656,6 +580,13 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         }
         return s;
       }));
+
+      if (isFirstUserMessage) {
+        const currentSession = sessions.find(s => s.id === currentSessionId);
+        if (currentSession?.autoTitle || currentSession?.name === "New Chat") {
+          generateAITitle(`User: ${messageText}\nAI: ${botText}`, currentSessionId);
+        }
+      }
     } catch (err) {
       console.error("Supernet connection failure:", err);
       let errorMsg = err.message || "An unknown network error occurred.";
@@ -684,6 +615,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         createNewChat={createNewChat}
         setActiveSessionId={setActiveSessionId}
         deleteChat={deleteChat}
+        renameChat={renameChat}
         theme={theme}
         toggleTheme={toggleTheme}
         onLogout={onLogout}

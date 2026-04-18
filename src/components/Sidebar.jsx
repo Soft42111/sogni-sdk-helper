@@ -1,4 +1,4 @@
-import { PlusCircle, X, Trash2, Sun, Moon, LogOut, Zap } from 'lucide-react';
+import { PlusCircle, X, Trash2, Pen, Sun, Moon, LogOut, Zap } from 'lucide-react';
 
 export default function Sidebar({
   sessions,
@@ -10,6 +10,7 @@ export default function Sidebar({
   createNewChat,
   setActiveSessionId,
   deleteChat,
+  renameChat,
   theme,
   toggleTheme,
   onLogout
@@ -48,12 +49,22 @@ export default function Sidebar({
               onClick={() => { setActiveSessionId(session.id); setIsSidebarOpen(false); }}
             >
               <span>{session.name}</span>
-              <button
-                className="delete-chat-btn"
-                onClick={(e) => deleteChat(e, session.id)}
-              >
-                <Trash2 size={14} />
-              </button>
+              <div className="chat-item-actions">
+                <button
+                  className="action-chat-btn"
+                  onClick={(e) => renameChat(e, session.id)}
+                  title="Rename Chat"
+                >
+                  <Pen size={14} />
+                </button>
+                <button
+                  className="action-chat-btn delete"
+                  onClick={(e) => deleteChat(e, session.id)}
+                  title="Delete Chat"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
