@@ -114,8 +114,8 @@ function AuthScreen({ onAuthenticate }) {
           appId: 'sogni-helper-app-1',
           network: 'fast'
         });
-        await client.account.login(username, password);
-        localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
+        const loginData = await client.account.login(username, password);
+        localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', token: loginData.token, refreshToken: loginData.refreshToken }));
       }
       onAuthenticate(client);
     } catch (err) {
@@ -234,13 +234,15 @@ function App() {
       const authData = localStorage.getItem('sogni_auth');
       if (authData) {
         try {
-          const { authType, apiKey, username, password } = JSON.parse(authData);
+          const { authType, apiKey, token, refreshToken } = JSON.parse(authData);
           let client;
           if (authType === 'apikey') {
             client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', apiKey, network: 'fast' });
-          } else if (authType === 'login') {
+          } else if (authType === 'login' && token && refreshToken) {
             client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-            await client.account.login(username, password);
+            await client.setTokens({ token, refreshToken });
+          } else if (authType === 'login') {
+             throw new Error("Old session format. Please login again.");
           }
           if (client) setSogniClient(client);
         } catch (e) {
