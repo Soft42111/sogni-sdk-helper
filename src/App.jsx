@@ -44,7 +44,6 @@ window.fetch = async (...args) => {
 };
 // ------------------------
 
-const TURNSTILE_SITE_KEY = '0x4AAAAAAC-9sNk_20dEkOAn';
 
 const SOGNI_DOC_TOOLS = [
   {
@@ -85,58 +84,12 @@ const SOGNI_DOC_TOOLS = [
   }
 ];
 
-function TurnstileWidget({ onVerify, onError }) {
-  const widgetRef = useRef(null);
-
-  useEffect(() => {
-    let widgetId;
-    const renderWidget = () => {
-      if (window.turnstile && widgetRef.current) {
-        widgetId = window.turnstile.render(widgetRef.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => {
-            console.log('[Turnstile] Token received:', token.substring(0, 20) + '...');
-            onVerify(token);
-          },
-          'error-callback': () => {
-            console.error('[Turnstile] Widget error');
-            if (onError) onError('Turnstile verification error. This domain may not be authorized.');
-          },
-          'expired-callback': () => {
-            console.warn('[Turnstile] Token expired, clearing');
-            onVerify('');
-          },
-          theme: 'dark'
-        });
-      }
-    };
-
-    if (window.turnstile) {
-      renderWidget();
-    } else {
-      window.onloadTurnstileCallback = renderWidget;
-    }
-
-    return () => {
-      if (window.turnstile && widgetId !== undefined) {
-        window.turnstile.remove(widgetId);
-      }
-    };
-  }, [onVerify, onError]);
-
-  return <div ref={widgetRef} style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}></div>;
-}
 
 function AuthScreen({ onAuthenticate }) {
   const [authType, setAuthType] = useState('apikey');
-  const [isSignup, setIsSignup] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [referralCode, setReferralCode] = useState('');
-  const [turnstileToken, setTurnstileToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -147,31 +100,7 @@ function AuthScreen({ onAuthenticate }) {
 
     try {
       let client;
-      if (isSignup) {
-        if (!username || !email || !password) throw new Error("All fields are required");
-        if (password !== confirmPassword) throw new Error("Passwords do not match");
-        if (!turnstileToken) throw new Error("Please complete the verification");
-
-        // For signup, disable socket (not needed) and go direct to API
-        client = await SogniClient.createInstance({
-          appId: 'sogni-helper-app-1',
-          network: 'fast',
-          disableSocket: true
-        });
-        const signupParams = { username, email, password, turnstileToken, subscribe: false };
-        if (referralCode && referralCode.trim() !== '') {
-          signupParams.referralCode = referralCode.trim();
-        }
-        console.log('[Signup] Token length:', turnstileToken.length);
-        console.log('[Signup] Params:', { ...signupParams, password: '***', turnstileToken: turnstileToken.substring(0, 30) + '...' });
-        await client.account.create(signupParams);
-        // Dispose the socketless client; we'll create a proper one for the session
-        client.dispose();
-        // Now login with a full client
-        client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
-        await client.account.login(username, password);
-        localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', username, password }));
-      } else if (authType === 'apikey') {
+      if (authType === 'apikey') {
         if (!apiKey.trim()) throw new Error("API Key is required");
         client = await SogniClient.createInstance({
           appId: 'sogni-helper-app-1',
@@ -191,15 +120,7 @@ function AuthScreen({ onAuthenticate }) {
       onAuthenticate(client);
     } catch (err) {
       console.error("Auth Exception:", err);
-      console.error("Error status:", err.status);
-      console.error("Error payload:", JSON.stringify(err.payload, null, 2));
-      let errorMsg = err.payload?.message || err.message || 'Authentication failed.';
-      if (err.payload?.errorCode) {
-        errorMsg += ` (Code: ${err.payload.errorCode})`;
-      }
-      if (errorMsg.includes('Verification failed') && isSignup) {
-        errorMsg += ' — Try creating your account at app.sogni.ai first, then login here.';
-      }
+      const errorMsg = err.payload?.message || err.message || 'Authentication failed.';
       setError(errorMsg);
     } finally {
       setIsLoading(false);
@@ -213,105 +134,77 @@ function AuthScreen({ onAuthenticate }) {
           <div className="auth-title-icon">
             <Zap size={20} />
           </div>
-          <h2>{isSignup ? 'Create Account' : 'Welcome back'}</h2>
-          <p>{isSignup ? 'Sign up for Sogni Supernet' : 'Sign in to Sogni SDK Helper'}</p>
+          <h2>Welcome back</h2>
+          <p>Sign in to Sogni SDK Helper</p>
         </div>
 
-        {!isSignup && (
-          <div className="auth-tabs">
-            <button
-              type="button"
-              className={`auth-tab ${authType === 'apikey' ? 'active' : ''}`}
-              onClick={() => setAuthType('apikey')}
-            >
-              <Key size={14} /> API Key
-            </button>
-            <button
-              type="button"
-              className={`auth-tab ${authType === 'login' ? 'active' : ''}`}
-              onClick={() => setAuthType('login')}
-            >
-              <User size={14} /> Account
-            </button>
-          </div>
-        )}
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={`auth-tab ${authType === 'apikey' ? 'active' : ''}`}
+            onClick={() => setAuthType('apikey')}
+          >
+            <Key size={14} /> API Key
+          </button>
+          <button
+            type="button"
+            className={`auth-tab ${authType === 'login' ? 'active' : ''}`}
+            onClick={() => setAuthType('login')}
+          >
+            <User size={14} /> Account
+          </button>
+        </div>
 
         <form className="auth-form" onSubmit={handleAuth}>
           {error && <div className="auth-error">{error}</div>}
 
-          {isSignup ? (
+          {authType === 'apikey' ? (
+            <div className="input-wrapper">
+              <Key size={16} color="var(--text-tertiary)" />
+              <input
+                type="password"
+                placeholder="Sogni API Key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+            </div>
+          ) : (
             <>
               <div className="input-wrapper">
                 <User size={16} color="var(--text-tertiary)" />
-                <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-              </div>
-              <div className="input-wrapper">
-                <Search size={16} color="var(--text-tertiary)" />
-                <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div className="input-wrapper">
-                <Lock size={16} color="var(--text-tertiary)" />
-                <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </div>
-              <div className="input-wrapper">
-                <Lock size={16} color="var(--text-tertiary)" />
-                <input type="password" placeholder="Re-enter Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-              </div>
-              <div className="input-wrapper">
-                <PlusCircle size={16} color="var(--text-tertiary)" />
-                <input type="text" placeholder="Referral Code (Optional)" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
-              </div>
-              <TurnstileWidget onVerify={setTurnstileToken} onError={setError} />
-            </>
-          ) : (
-            authType === 'apikey' ? (
-              <div className="input-wrapper">
-                <Key size={16} color="var(--text-tertiary)" />
                 <input
-                  type="password"
-                  placeholder="Sogni API Key"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  type="text"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
-            ) : (
-              <>
-                <div className="input-wrapper">
-                  <User size={16} color="var(--text-tertiary)" />
-                  <input
-                    type="text"
-                    placeholder="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                  />
-                </div>
-                <div className="input-wrapper">
-                  <Lock size={16} color="var(--text-tertiary)" />
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-              </>
-            )
+              <div className="input-wrapper">
+                <Lock size={16} color="var(--text-tertiary)" />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </>
           )}
 
           <button
             type="submit"
             className="auth-submit-btn"
-            disabled={isLoading || (isSignup && !turnstileToken)}
+            disabled={isLoading}
           >
-            {isLoading ? 'Connecting…' : (isSignup ? 'Create Account' : <><LogIn size={16} /> Sign in</>)}
+            {isLoading ? 'Connecting…' : <><LogIn size={16} /> Sign in</>}
           </button>
         </form>
 
         <div className="auth-footer">
-          {isSignup ? "Already have an account?" : "Don't have an account?"}{' '}
-          <button onClick={() => setIsSignup(!isSignup)}>
-            {isSignup ? 'Sign In' : 'Sign Up'}
-          </button>
+          Don't have an account?{' '}
+          <a href="https://app.sogni.ai/create?code=soft4211" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+            Sign Up on Sogni ↗
+          </a>
         </div>
       </div>
     </div>
@@ -438,18 +331,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
   };
 
   const createNewChat = () => {
-    let title = window.prompt("What is the title of this chat (leave blank for AI to generate)?");
-    if (title === null) return; // User cancelled
-    
-    title = title.trim();
-    let autoTitle = false;
-    if (!title) {
-      title = "New Chat";
-      autoTitle = true;
-    }
-    if (title.length > 30) title = title.substring(0, 30) + '...';
-
-    const newSession = { id: Date.now().toString(), name: title, autoTitle: autoTitle, messages: [defaultMessage] };
+    const newSession = { id: Date.now().toString(), name: 'New Chat', autoTitle: true, messages: [defaultMessage] };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
   };
@@ -497,10 +379,10 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       const res = await sogni.chat.completions.create({
         model: 'qwen3.5-35b-a3b-gguf-q4km',
         messages: [
-          { role: 'system', content: 'Generate a very short 2-4 word title for a chat conversation. Return ONLY the title text, nothing else. No quotes, no prefix, no explanation. Do not use <think> tags.' },
-          { role: 'user', content: userText }
+          { role: 'user', content: `Generate a short, clear title for this conversation.\n\nConstraints:\n- 3 to 6 words\n- No punctuation\n- No filler words\n- Focus on core topic or goal\n- Use natural phrasing\n\nConversation:\n${userText}\n\nReturn only the title.` }
         ],
-        max_tokens: 80,
+        max_tokens: 30,
+        temperature: 0.3,
         stream: false
       });
 
@@ -509,23 +391,33 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       if (titleText) {
         // Strip thinking blocks
         let mainTitle = titleText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-        // Clean up any conversational prefixes
+        // Clean up any conversational prefixes or formatting
         mainTitle = mainTitle.replace(/^(here is the title|title|chat title|suggested title|the title is)[\s]*:?\s*/i, '').trim();
         mainTitle = mainTitle.replace(/^['"`]+|['"`]+$/g, '').trim();
-        mainTitle = mainTitle.replace(/\.+$/, '').trim();
+        mainTitle = mainTitle.replace(/[.!?,;:]+$/g, '').trim();
+        // Take only the first line if multi-line
+        mainTitle = mainTitle.split('\n')[0].trim();
         
-        if (!mainTitle) {
-          // Fallback if the AI generation failed or stripped to nothing
+        if (!mainTitle || mainTitle.length <= 1) {
+          // Fallback: use first words of user's message
           const extractedUserPrompt = userText.split('\n')[0].replace('User: ', '').trim();
           mainTitle = extractedUserPrompt.substring(0, 25) + (extractedUserPrompt.length > 25 ? '...' : '');
         }
 
-        if (mainTitle && mainTitle.length > 1 && mainTitle.length < 80) {
-          setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: mainTitle } : s));
+        if (mainTitle.length > 40) mainTitle = mainTitle.substring(0, 40).trim();
+
+        if (mainTitle && mainTitle.length > 1) {
+          setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: mainTitle, autoTitle: false } : s));
         }
       }
     } catch (e) {
-      console.error("Title generation failed", e);
+      console.error('[Title] Generation failed:', e);
+      // Fallback: use user's message as title
+      const fallback = userText.split('\n')[0].replace('User: ', '').trim();
+      const shortTitle = fallback.substring(0, 25) + (fallback.length > 25 ? '...' : '');
+      if (shortTitle) {
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: shortTitle, autoTitle: false } : s));
+      }
     }
   };
 
