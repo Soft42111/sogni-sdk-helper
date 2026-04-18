@@ -441,27 +441,37 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       if (!sogni) throw new Error("SogniClient not initialized");
 
       let apiMessages = [
-        { role: 'system', content: `${soulRaw}\nYou have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'read_sogni_doc' tool to fetch the exact specs before answering.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
+        { role: 'system', content: `${soulRaw}\nYou have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'search_sogni_docs' or 'read_sogni_doc' tool before answering. If you cannot find the answer in the documentation, you MUST answer from your own intellect and general knowledge. Do not apologize for missing docs, just provide the best answer you can.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
         ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
       ];
 
       let isLooping = true;
       let finalBotText = "";
       let loopCount = 0;
-      const MAX_TOOL_LOOPS = 5;
+      const MAX_TOOL_LOOPS = 6;
 
       while (isLooping && loopCount < MAX_TOOL_LOOPS) {
         loopCount++;
 
-        // Always use non-streaming to ensure perfectly stable full message response
-        const response = await sogni.chat.completions.create({
+        const requestConfig = {
           model: 'qwen3.5-35b-a3b-gguf-q4km',
           messages: apiMessages,
-          tools: SOGNI_DOC_TOOLS,
-          tool_choice: 'auto',
           max_tokens: 4096,
           stream: false
-        });
+        };
+
+        // Allow tools for normal loops, but force a normal response on the final loop
+        if (loopCount < MAX_TOOL_LOOPS) {
+          requestConfig.tools = SOGNI_DOC_TOOLS;
+          requestConfig.tool_choice = 'auto';
+        } else {
+          apiMessages.push({
+            role: 'system',
+            content: 'You have reached the maximum number of searches. Please provide your final answer now based on the gathered information or your own intellect. Do not attempt to use any more tools.'
+          });
+        }
+
+        const response = await sogni.chat.completions.create(requestConfig);
 
         const message = extractMessage(response);
         if (!message) {
@@ -492,7 +502,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
                   results.push(`[File: ${filename}]\n...${content.substring(start, end)}...`);
                 }
               }
-              result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or list the docs.';
+              result = results.length > 0 ? results.slice(0, 4).join('\n\n') : 'No matching documentation found. Try a different search query or use your own knowledge.';
             } else if (funcName === 'list_sogni_docs') {
               result = JSON.stringify(Object.keys(sogniDocs));
             } else if (funcName === 'read_sogni_doc') {
@@ -515,10 +525,6 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
           finalBotText += message.content || '';
           isLooping = false;
         }
-      }
-
-      if (loopCount >= MAX_TOOL_LOOPS && isLooping) {
-        finalBotText = 'I researched the documentation but hit the maximum lookup limit. Here is what I found so far — please try a more specific question.';
       }
 
       setIsSearching(false);
