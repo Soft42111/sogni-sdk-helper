@@ -295,7 +295,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     return initSessions[0].id;
   });
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('qwen3.5-35b-a3b-gguf-q4km');
+  const [selectedModel, setSelectedModel] = useState('qwen3.6-coder-32b-sogni');
 
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -424,17 +424,29 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     }
   };
 
-  const sendMessage = async (textToUse) => {
-    const messageText = typeof textToUse === 'string' ? textToUse : input;
-    if (!messageText || !messageText.trim()) return;
-
+  const sendMessage = async (textToUse, isRegenerate = false) => {
     const currentSessionId = activeSessionId;
-    const currentMessages = sessions.find(s => s.id === currentSessionId).messages;
-    const isFirstUserMessage = currentMessages.length === 1;
+    const currentSession = sessions.find(s => s.id === currentSessionId);
+    let currentMessages = [...currentSession.messages];
+    let messageText = '';
 
-    const newMessages = [...currentMessages, { id: Date.now(), text: messageText, sender: 'user' }];
-    updateSessionMessages(currentSessionId, newMessages);
-    setInput('');
+    if (isRegenerate) {
+      if (currentMessages.length > 0 && currentMessages[currentMessages.length - 1].sender === 'bot' && currentMessages[currentMessages.length - 1].id !== 1) {
+        currentMessages.pop(); // Remove the last bot response
+      }
+      const lastUserMsg = currentMessages.slice().reverse().find(m => m.sender === 'user');
+      if (!lastUserMsg) return; // Nothing to regenerate
+      messageText = lastUserMsg.text;
+      updateSessionMessages(currentSessionId, currentMessages);
+    } else {
+      messageText = typeof textToUse === 'string' ? textToUse : input;
+      if (!messageText || !messageText.trim()) return;
+      currentMessages.push({ id: Date.now(), text: messageText, sender: 'user' });
+      updateSessionMessages(currentSessionId, currentMessages);
+      setInput('');
+    }
+
+    const isFirstUserMessage = currentMessages.length === 2 && !isRegenerate;
     setIsTyping(true);
     setStreamingText('');
 
@@ -445,7 +457,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
 
       let apiMessages = [
         { role: 'system', content: `${soulRaw}\nYou have access to the complete 64-volume Sogni SDK Documentation via tools. If a question is highly technical, use the 'search_sogni_docs' or 'read_sogni_doc' tool before answering. If you cannot find the answer in the documentation, you MUST answer from your own intellect and general knowledge. Do not apologize for missing docs, just provide the best answer you can.\n\nQuick Context:\n${SOGNI_KNOWLEDGE_BASE}` },
-        ...newMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
+        ...currentMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
       ];
 
       let isLooping = true;
@@ -607,8 +619,9 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               onChange={(e) => setSelectedModel(e.target.value)}
               style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-sunken)', color: 'var(--text-primary)', border: '1px solid var(--border)', marginRight: '1rem', fontSize: '0.85rem' }}
             >
-              <option value="qwen3.5-35b-a3b-gguf-q4km">Normal</option>
-              <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Unrestricted</option>
+              <option value="qwen3.6-coder-32b-sogni">Qwen 3.6 Coder 32B</option>
+              <option value="qwen3.5-35b-a3b-gguf-q4km">Qwen 3.5 Normal</option>
+              <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Qwen 3.5 Unrestricted</option>
             </select>
             <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}

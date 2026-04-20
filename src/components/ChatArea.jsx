@@ -38,11 +38,7 @@ export default function ChatArea({
   };
 
   const handleRegenerate = () => {
-    const userMessages = activeSession?.messages.filter(m => m.sender === 'user');
-    if (userMessages && userMessages.length > 0) {
-      const lastUserMsg = userMessages[userMessages.length - 1];
-      sendMessage(lastUserMsg.text);
-    }
+    sendMessage(null, true);
   };
 
   const suggestions = [
