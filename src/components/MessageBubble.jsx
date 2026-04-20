@@ -150,7 +150,7 @@ export default function MessageBubble({ msg, onRegenerate, isStreaming }) {
               {onRegenerate && (
                 <button
                   className="action-btn"
-                  onClick={onRegenerate}
+                  onClick={() => onRegenerate(msg.id)}
                   title="Regenerate"
                 >
                   <RotateCcw size={14} />

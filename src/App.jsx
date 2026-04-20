@@ -424,15 +424,16 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     }
   };
 
-  const sendMessage = async (textToUse, isRegenerate = false) => {
+  const sendMessage = async (textToUse, isRegenerate = false, targetMsgId = null) => {
     const currentSessionId = activeSessionId;
     const currentSession = sessions.find(s => s.id === currentSessionId);
     let currentMessages = [...currentSession.messages];
     let messageText = '';
 
-    if (isRegenerate) {
-      if (currentMessages.length > 0 && currentMessages[currentMessages.length - 1].sender === 'bot' && currentMessages[currentMessages.length - 1].id !== 1) {
-        currentMessages.pop(); // Remove the last bot response
+    if (isRegenerate && targetMsgId) {
+      const msgIndex = currentMessages.findIndex(m => m.id === targetMsgId);
+      if (msgIndex !== -1) {
+        currentMessages = currentMessages.slice(0, msgIndex);
       }
       const lastUserMsg = currentMessages.slice().reverse().find(m => m.sender === 'user');
       if (!lastUserMsg) return; // Nothing to regenerate
@@ -583,6 +584,16 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     }
   };
 
+  const computeContextWindow = () => {
+    const baseText = `${soulRaw}\n${SOGNI_KNOWLEDGE_BASE}`;
+    const sessionText = activeSession?.messages?.map(m => m.text).join(' ') || '';
+    const totalChars = baseText.length + sessionText.length;
+    // Rough estimation: ~4 chars per token on average for English
+    const tokens = Math.ceil(totalChars / 4);
+    if (tokens > 1000) return (tokens / 1000).toFixed(1) + 'k';
+    return tokens;
+  };
+
   return (
     <div className="app-container">
       <Sidebar
@@ -610,6 +621,9 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
             <div className="model-badge">
               <span className="dot"></span>
               Sogni SDK Helper
+            </div>
+            <div style={{ marginLeft: '1rem', fontSize: '0.8rem', color: 'var(--text-tertiary)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px' }}>
+              Ctx Window: {computeContextWindow()} / 128k
             </div>
           </div>
           <div className="header-right">

@@ -37,8 +37,8 @@ export default function ChatArea({
     }
   };
 
-  const handleRegenerate = () => {
-    sendMessage(null, true);
+  const handleRegenerate = (msgId) => {
+    sendMessage(null, true, msgId);
   };
 
   const suggestions = [
