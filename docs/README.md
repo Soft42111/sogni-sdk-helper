@@ -9,7 +9,7 @@ Welcome to the **Sogni Technical Encyclopedia**. This expansive collection consi
 Sogni Supernet operates as a high-performance DePIN protocol, bridging high-end GPU clusters (Fast Network) and Apple Silicon devices (Relaxed Network) via a low-latency WebSocket orchestrator. The `@sogni-ai/sogni-client` provides direct, event-driven programmatic access to these distributed nodes.
 
 ### Protocol Invocation
-Connect dynamically and synthesize generation pipelines:
+Connect dynamically and synthesize generation pipelines or complex LLM tasks:
 ```typescript
 import { SogniClient } from '@sogni-ai/sogni-client';
 
@@ -20,8 +20,13 @@ const sogni = await SogniClient.createInstance({
   apiKey: 'your-api-key'
 });
 
-// Await the distributed worker model registry
-const models = await sogni.projects.waitForModels();
+// Advanced Chat Synthetization with Qwen 3.6
+const result = await sogni.chat.completions.create({
+  model: 'qwen3.6-35b-a3b-gguf-iq4xs',
+  messages: [{ role: 'user', content: 'Execute core instruction.' }],
+  think: true, // boolean natively enabling CoT logic
+  taskProfile: 'reasoning' // 'general' | 'coding' | 'reasoning'
+});
 ```
 
 ---
@@ -86,11 +91,11 @@ const models = await sogni.projects.waitForModels();
 
 ## 🧠 Division IX: Cognitive Layer (LLM) & Qwen 3.6
 
-The cognitive layer has been upgraded for comprehensive multi-turn reasoning workflows. We now feature full native model compatibility with the advanced **Qwen 3.6 (sogni provided)**. This bleeding-edge LLM stack enables expanded 128k context limits, dynamic tool orchestration, and `<think>` mode extraction natively via the SDK.
+The cognitive layer has been upgraded for comprehensive multi-turn reasoning workflows. We now feature full native model compatibility with the advanced **Qwen 3.6 (sogni provided)** parameterized as `qwen3.6-35b-a3b-gguf-iq4xs`. This bleeding-edge LLM stack scales to massive **262k context limits**, handles dynamic tool orchestration, and integrates advanced task-profile constraints (`general`, `coding`, `reasoning`).
 
 43. **[Vol. 43: OpenAI Layer Mapping](./VOL_43_OPENAI_COMPAT.md)**: The compatibility translation engine.
-44. **[Vol. 44: Context Window Mgmt](./VOL_44_CONTEXT_128K.md)**: Managing the 128K token manifold.
-45. **[Vol. 45: Thinking Mode Logic](./VOL_45_THINK_MODE.md)**: CoT (Chain-of-Thought) and Qwen 3.6 internals.
+44. **[Vol. 44: Context Window Mgmt](./VOL_44_CONTEXT_128K.md)**: Managing the 262K extended token manifold.
+45. **[Vol. 45: Thinking Mode Logic](./VOL_45_THINK_MODE.md)**: CoT (Chain-of-Thought) toggles and `taskProfile` execution flags.
 46. **[Vol. 46: Chunk Delivery Delta](./VOL_46_STREAM_CHUNKS.md)**: Merging deltas for performance.
 47. **[Vol. 47: Tool-Calling Schemas](./VOL_47_TOOL_SCHEMAS.md)**: Drafting validator schemas for agents.
 

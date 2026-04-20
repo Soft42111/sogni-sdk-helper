@@ -295,7 +295,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     return initSessions[0].id;
   });
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('qwen3.6-coder-32b-sogni');
+  const [selectedModel, setSelectedModel] = useState('qwen3.6-35b-a3b-gguf-iq4xs');
 
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -472,8 +472,10 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         const requestConfig = {
           model: selectedModel,
           messages: apiMessages,
-          max_tokens: 4096,
-          stream: false
+          max_tokens: 8192,
+          stream: false,
+          think: true,
+          taskProfile: 'reasoning'
         };
 
         // Allow tools for normal loops, but force a normal response on the final loop
@@ -623,7 +625,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               Sogni SDK Helper
             </div>
             <div style={{ marginLeft: '1rem', fontSize: '0.8rem', color: 'var(--text-tertiary)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px' }}>
-              Ctx Window: {computeContextWindow()} / 128k
+              Ctx Window: {computeContextWindow()} / 262k
             </div>
           </div>
           <div className="header-right">
@@ -633,7 +635,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               onChange={(e) => setSelectedModel(e.target.value)}
               style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-sunken)', color: 'var(--text-primary)', border: '1px solid var(--border)', marginRight: '1rem', fontSize: '0.85rem' }}
             >
-              <option value="qwen3.6-coder-32b-sogni">Qwen 3.6 Coder 32B</option>
+              <option value="qwen3.6-35b-a3b-gguf-iq4xs">Qwen 3.6 35B</option>
               <option value="qwen3.5-35b-a3b-gguf-q4km">Qwen 3.5 Normal</option>
               <option value="qwen3.5-35b-a3b-abliterated-gguf-q4km">Qwen 3.5 Unrestricted</option>
             </select>
