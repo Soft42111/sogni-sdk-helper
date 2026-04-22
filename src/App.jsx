@@ -610,7 +610,23 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         botText = "The Sogni model responded, but the data format was unreadable.";
       }
       
-      // Do NOT strip <think> here so MessageBubble can display it
+      // Safety check: If images were generated in this turn but not included in botText, append them
+      if (typeof botText === 'string') {
+        const toolMessages = apiMessages.filter(m => m.role === 'tool');
+        toolMessages.forEach(tm => {
+          if (tm.content && tm.content.includes('![Visual Aid')) {
+            const imgMatch = tm.content.match(/!\[Visual Aid - [^\]]*\]\([^\)]+\)/g);
+            if (imgMatch) {
+              imgMatch.forEach(tag => {
+                if (!botText.includes(tag)) {
+                  botText += "\n\n" + tag;
+                }
+              });
+            }
+          }
+        });
+      }
+
       botText = botText.trim();
 
       setSessions(prev => prev.map(s => {
