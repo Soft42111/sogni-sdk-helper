@@ -547,39 +547,72 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
             } else if (funcName === 'generate_visual_aid') {
               const { topic, prompt_override, modelId, width, height, is_infographic = true } = args;
               
-              const finalModelId = modelId || 'flux1-schnell-fp8';
+              const finalModelId = modelId || 'flux2-dev'; // Upgraded to Pro model
               const finalWidth = width || 1024;
               const finalHeight = height || 1024;
               
-              let positivePrompt = prompt_override || `A professional, high-quality flat-vector infographic about: ${topic}. Clean layout, white background, readable typography, Sogni AI branding style, 8k, hyper-detailed, technical diagram style.`;
+              // Nano Banana 3 Pro (Gemini 3 Pro) quality prompt engineering
+              let positivePrompt = prompt_override || `A professional, world-class minimalist infographic about: ${topic}. 
+              Clean typographic layout, perfectly readable text, high-contrast flat vector design. 
+              Minimalist aesthetic, deep blue and white Sogni branding, ultra-sharp precision, vector graphics, 8k resolution.
+              Ensure all text is correctly spelled and clearly presented in an organized diagram.`;
               
               if (is_infographic && !prompt_override) {
-                 positivePrompt += " masterpiece, professional graphics, vector art, educational diagram.";
+                 positivePrompt += " minimalist corporate style, data visualization masterpiece, award-winning graphic design.";
               }
 
               try {
-                const project = await sogni.projects.create({
+                const projectProps = {
                   type: 'image',
                   modelId: finalModelId,
                   positivePrompt,
                   numberOfMedia: 1,
-                  steps: finalModelId.includes('schnell') || finalModelId.includes('turbo') ? 4 : 20,
-                  guidance: finalModelId.includes('schnell') || finalModelId.includes('turbo') ? 1.0 : 7.5,
+                  // Best params for Flux 2 Dev
+                  steps: modelId ? (finalModelId.includes('schnell') ? 4 : 30) : 30,
+                  guidance: modelId ? (finalModelId.includes('schnell') ? 1.0 : 8.0) : 8.0,
                   width: finalWidth,
                   height: finalHeight,
                   sizePreset: 'custom',
                   outputFormat: 'jpg'
-                });
+                };
+
+                const project = await sogni.projects.create(projectProps);
                 
                 const urls = await project.waitForCompletion();
                 if (urls && urls.length > 0) {
-                  result = `Successfully generated a visual aid using ${finalModelId}.\n\n![Visual Aid - ${topic}](${urls[0]})\n\n*(Note: This image was generated in real-time powered by the Sogni Supernet)*`;
+                  result = `Successfully generated a "Pro" visual aid using ${finalModelId}.\n\n![Visual Aid - ${topic}](${urls[0]})\n\n*(Note: This high-fidelity infographic was generated using best-in-class parameters (30 steps, 8.0 guidance) on the Sogni Supernet)*`;
                 } else {
                   result = "The image was generated but no URL was returned. It might have been filtered for safety.";
                 }
               } catch (e) {
                 console.error("Generation failed:", e);
-                result = `Failed to generate visual aid: ${e.message || 'Unknown error'}`;
+                // Fallback attempt to flux1-dev-fp8 if flux2-dev failed
+                if (finalModelId === 'flux2-dev') {
+                   try {
+                     const fallbackProject = await sogni.projects.create({
+                        type: 'image',
+                        modelId: 'flux1-dev-fp8', // Fallback to known high-fidelity ID
+                        positivePrompt: positivePrompt,
+                        numberOfMedia: 1,
+                        steps: 30,
+                        guidance: 8.0,
+                        width: finalWidth,
+                        height: finalHeight,
+                        sizePreset: 'custom',
+                        outputFormat: 'jpg'
+                     });
+                     const fallbackUrls = await fallbackProject.waitForCompletion();
+                     if (fallbackUrls?.[0]) {
+                        result = `Successfully generated a high-fidelity visual aid (via fallback model flux1-dev-fp8).\n\n![Visual Aid - ${topic}](${fallbackUrls[0]})`;
+                     } else {
+                        result = "Fallback generation failed to return an image.";
+                     }
+                   } catch(err2) {
+                     result = `Primary and fallback generation failed: ${err2.message}`;
+                   }
+                } else {
+                  result = `Failed to generate visual aid: ${e.message || 'Unknown error'}`;
+                }
               }
             } else {
               result = 'Unknown tool: ' + funcName;
