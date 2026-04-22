@@ -81,6 +81,25 @@ const SOGNI_DOC_TOOLS = [
         required: ['filename']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_visual_aid',
+      description: 'Generates a high-quality visual infographic or image about a Sogni SDK topic or general request. Support for 80+ models and custom dimensions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The topic or concept to visualize (e.g. "Authorization Flow", "Project Lifecycle")' },
+          prompt_override: { type: 'string', description: 'Optional: Direct prompt if the user wants something specific instead of a generic visual aid.' },
+          modelId: { type: 'string', description: 'Optional: Specific model for backward compatibility (defaults to flux1-schnell-fp8). Supports 80+ models.' },
+          width: { type: 'number', description: 'Optional: Image width (default 1024)' },
+          height: { type: 'number', description: 'Optional: Image height (default 1024)' },
+          is_infographic: { type: 'boolean', description: 'If true, applies professional infographic prompt engineering. Default true.' }
+        },
+        required: ['topic']
+      }
+    }
   }
 ];
 
@@ -525,6 +544,43 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               result = JSON.stringify(Object.keys(sogniDocs));
             } else if (funcName === 'read_sogni_doc') {
               result = sogniDocs[args.filename] || 'Document not found.';
+            } else if (funcName === 'generate_visual_aid') {
+              const { topic, prompt_override, modelId, width, height, is_infographic = true } = args;
+              
+              const finalModelId = modelId || 'flux1-schnell-fp8';
+              const finalWidth = width || 1024;
+              const finalHeight = height || 1024;
+              
+              let positivePrompt = prompt_override || `A professional, high-quality flat-vector infographic about: ${topic}. Clean layout, white background, readable typography, Sogni AI branding style, 8k, hyper-detailed, technical diagram style.`;
+              
+              if (is_infographic && !prompt_override) {
+                 positivePrompt += " masterpiece, professional graphics, vector art, educational diagram.";
+              }
+
+              try {
+                const project = await sogni.projects.create({
+                  type: 'image',
+                  modelId: finalModelId,
+                  positivePrompt,
+                  numberOfMedia: 1,
+                  steps: finalModelId.includes('schnell') || finalModelId.includes('turbo') ? 4 : 20,
+                  guidance: finalModelId.includes('schnell') || finalModelId.includes('turbo') ? 1.0 : 7.5,
+                  width: finalWidth,
+                  height: finalHeight,
+                  sizePreset: 'custom',
+                  outputFormat: 'jpg'
+                });
+                
+                const urls = await project.waitForCompletion();
+                if (urls && urls.length > 0) {
+                  result = `Successfully generated a visual aid using ${finalModelId}.\n\n![Visual Aid - ${topic}](${urls[0]})\n\n*(Note: This image was generated in real-time powered by the Sogni Supernet)*`;
+                } else {
+                  result = "The image was generated but no URL was returned. It might have been filtered for safety.";
+                }
+              } catch (e) {
+                console.error("Generation failed:", e);
+                result = `Failed to generate visual aid: ${e.message || 'Unknown error'}`;
+              }
             } else {
               result = 'Unknown tool: ' + funcName;
             }
