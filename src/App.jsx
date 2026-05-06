@@ -1,49 +1,54 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageSquare, Key, User, Lock, LogIn, Menu, X, Zap, Sun, Moon } from 'lucide-react';
+import { Send, Terminal, Layout, Cpu, Info, Search, PlusCircle, Trash2, MessageSquare, Key, User, Lock, LogIn, Menu, X, Zap, Sun, Moon, Shield, Hash, WifiOff, Wifi } from 'lucide-react';
 import { SogniClient } from '@sogni-ai/sogni-client';
 import { getResponse } from './constants/sdk-info';
 import { SOGNI_KNOWLEDGE_BASE } from './constants/sogni-knowledge';
 import sogniDocs from './constants/sogni-docs.json';
+import { validateAccessCode, getSogniCredentials, getStoredSession, saveSession, clearSession } from './constants/auth-config';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import soulRaw from './soul.md?raw';
-// --- CORS PROXY PATCH ---
-const originalFetch = window.fetch;
-window.fetch = async (...args) => {
-  let [resource, config] = args;
-  const getUrl = (r) => {
-    if (typeof r === 'string') return r;
-    if (r instanceof URL) return r.toString();
-    if (r instanceof Request) return r.url;
-    return '';
-  };
 
-  const url = getUrl(resource);
-  if (url.startsWith('https://api.sogni.ai')) {
-    const newUrl = url.replace('https://api.sogni.ai', '/sogni-api');
-    // Log signup-related requests for debugging
-    if (url.includes('/account/')) {
-      console.log('[CORS Proxy]', url, '→', newUrl);
-      if (config?.body) {
-        try {
-          const parsed = JSON.parse(config.body);
-          console.log('[CORS Proxy] Body keys:', Object.keys(parsed));
-          if (parsed.turnstileToken) {
-            console.log('[CORS Proxy] turnstileToken present, length:', parsed.turnstileToken.length);
-          }
-        } catch(e) { /* not JSON */ }
+// ─── Browser WebSocket Auth Patch ─────────────────────────────────────────────
+// The Sogni SDK's WebSocketClient passes { headers: { 'api-key': '...' } } as
+// the 2nd arg to `new WebSocket(url, options)`. This works in Node.js (ws pkg)
+// but browser WebSocket only accepts protocol strings as the 2nd arg, so the
+// auth headers never reach the server. This patch intercepts those calls and
+// moves auth credentials into the URL query string.
+if (typeof window !== 'undefined' && window.WebSocket) {
+  const _OriginalWebSocket = window.WebSocket;
+  window.WebSocket = function PatchedWebSocket(url, protocols) {
+    // Detect SDK's Node.js-style options object: { headers: { ... } }
+    if (protocols && typeof protocols === 'object' && !Array.isArray(protocols) && protocols.headers) {
+      const urlObj = new URL(url);
+      const headers = protocols.headers;
+      // Move api-key or Authorization token into URL query params
+      if (headers['api-key']) {
+        urlObj.searchParams.set('api-key', headers['api-key']);
       }
+      if (headers['Authorization'] || headers['authorization']) {
+        urlObj.searchParams.set('authorization', headers['Authorization'] || headers['authorization']);
+      }
+      console.log('[WS Patch] Moved auth headers to query params for browser WebSocket');
+      return new _OriginalWebSocket(urlObj.toString());
     }
-    if (resource instanceof Request) {
-      resource = new Request(newUrl, resource);
-    } else {
-      resource = newUrl;
+    // Normal WebSocket call — pass through unchanged
+    if (protocols !== undefined) {
+      return new _OriginalWebSocket(url, protocols);
     }
-  }
-  return originalFetch(resource, config);
-};
-// ------------------------
+    return new _OriginalWebSocket(url);
+  };
+  // Preserve prototype chain so instanceof checks still work
+  window.WebSocket.prototype = _OriginalWebSocket.prototype;
+  window.WebSocket.CONNECTING = _OriginalWebSocket.CONNECTING;
+  window.WebSocket.OPEN = _OriginalWebSocket.OPEN;
+  window.WebSocket.CLOSING = _OriginalWebSocket.CLOSING;
+  window.WebSocket.CLOSED = _OriginalWebSocket.CLOSED;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
+// Unique per-tab appId to prevent WebSocket conflicts (ErrorCode 4015 SWITCH_CONNECTION)
+const SOGNI_APP_ID = `sogni-helper-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
 const SOGNI_DOC_TOOLS = [
   {
@@ -105,45 +110,139 @@ const SOGNI_DOC_TOOLS = [
 
 
 function AuthScreen({ onAuthenticate }) {
-  const [authType, setAuthType] = useState('apikey');
+  const [authMode, setAuthMode] = useState('apikey'); // 'apikey', 'login', or 'accesscode'
   const [apiKey, setApiKey] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successUser, setSuccessUser] = useState('');
+  const digitRefs = useRef([]);
 
-  const handleAuth = async (e) => {
+  // --- Character input handlers for Access Code ---
+  const handleDigitChange = (index, value) => {
+    if (!/^[a-zA-Z0-9]?$/.test(value)) return;
+    const newDigits = [...digits];
+    newDigits[index] = value.toUpperCase();
+    setDigits(newDigits);
+    setError('');
+    if (value && index < 5) {
+      digitRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleDigitKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      digitRefs.current[index - 1]?.focus();
+    }
+    if (e.key === 'Enter') {
+      const code = digits.join('');
+      if (code.length === 6) handleAccessCodeSubmit();
+    }
+  };
+
+  const handleDigitPaste = (e) => {
     e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6);
+    if (pasted.length > 0) {
+      const newDigits = [...digits];
+      for (let i = 0; i < 6; i++) {
+        newDigits[i] = pasted[i] || '';
+      }
+      setDigits(newDigits);
+      const focusIdx = Math.min(pasted.length, 5);
+      digitRefs.current[focusIdx]?.focus();
+    }
+  };
+
+  // --- Auth handlers ---
+
+  // API Key login
+  const handleApiKeySubmit = async (e) => {
+    e.preventDefault();
+    if (!apiKey.trim()) { setError('API Key is required.'); return; }
     setIsLoading(true);
     setError('');
-
     try {
-      let client;
-      if (authType === 'apikey') {
-        if (!apiKey.trim()) throw new Error("API Key is required");
-        client = await SogniClient.createInstance({
-          appId: 'sogni-helper-app-1',
-          apiKey: apiKey,
-          network: 'fast'
-        });
-        localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'apikey', apiKey }));
-      } else {
-        if (!username.trim() || !password.trim()) throw new Error("Username and Password are required");
-        client = await SogniClient.createInstance({
-          appId: 'sogni-helper-app-1',
-          network: 'fast'
-        });
-        const loginData = await client.account.login(username, password);
-        localStorage.setItem('sogni_auth', JSON.stringify({ authType: 'login', token: loginData.token, refreshToken: loginData.refreshToken }));
-      }
+      const client = await SogniClient.createInstance({
+        appId: SOGNI_APP_ID,
+        apiKey: apiKey,
+        network: 'fast',
+        restEndpoint: window.location.origin
+      });
+      saveSession('apikey', { apiKey });
       onAuthenticate(client);
     } catch (err) {
-      console.error("Auth Exception:", err);
-      const errorMsg = err.payload?.message || err.message || 'Authentication failed.';
-      setError(errorMsg);
+      console.error('Auth Exception:', err);
+      setError(err.payload?.message || err.message || 'Authentication failed.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Account (username/password) login
+  const handleAccountSubmit = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password.trim()) { setError('Username and Password are required.'); return; }
+    setIsLoading(true);
+    setError('');
+    try {
+      const client = await SogniClient.createInstance({
+        appId: SOGNI_APP_ID,
+        network: 'fast',
+        restEndpoint: window.location.origin
+      });
+      const loginData = await client.account.login(username, password);
+      saveSession('login', { token: loginData.token, refreshToken: loginData.refreshToken });
+      onAuthenticate(client);
+    } catch (err) {
+      console.error('Auth Exception:', err);
+      setError(err.payload?.message || err.message || 'Authentication failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Access Code login (free — uses shared credentials)
+  const handleAccessCodeSubmit = async () => {
+    const code = digits.join('');
+    if (code.length !== 6) { setError('Please enter a complete 6-digit code.'); return; }
+    setIsLoading(true);
+    setError('');
+    try {
+      const validation = validateAccessCode(code);
+      if (!validation.valid) {
+        setError(validation.error);
+        setIsLoading(false);
+        return;
+      }
+      setSuccessUser(validation.user);
+      const { username: u, password: p } = getSogniCredentials();
+      const client = await SogniClient.createInstance({
+        appId: SOGNI_APP_ID,
+        network: 'fast',
+        restEndpoint: window.location.origin
+      });
+      const loginData = await client.account.login(u, p);
+      saveSession('shared', { token: loginData.token, refreshToken: loginData.refreshToken });
+      await new Promise(r => setTimeout(r, 800));
+      onAuthenticate(client);
+    } catch (err) {
+      console.error('Auth Exception:', err);
+      setError(err.payload?.message || err.message || 'Connection to Sogni Supernet failed.');
+      setSuccessUser('');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const codeComplete = digits.every(d => d !== '');
+
+  const subtitles = {
+    apikey: 'Sign in with your Sogni API Key',
+    login: 'Sign in with your Sogni account',
+    accesscode: 'Enter your 6-digit access code for free access'
   };
 
   return (
@@ -154,30 +253,45 @@ function AuthScreen({ onAuthenticate }) {
             <Zap size={20} />
           </div>
           <h2>Welcome back</h2>
-          <p>Sign in to Sogni SDK Helper</p>
+          <p>{subtitles[authMode]}</p>
         </div>
 
         <div className="auth-tabs">
           <button
             type="button"
-            className={`auth-tab ${authType === 'apikey' ? 'active' : ''}`}
-            onClick={() => setAuthType('apikey')}
+            className={`auth-tab ${authMode === 'apikey' ? 'active' : ''}`}
+            onClick={() => { setAuthMode('apikey'); setError(''); }}
           >
             <Key size={14} /> API Key
           </button>
           <button
             type="button"
-            className={`auth-tab ${authType === 'login' ? 'active' : ''}`}
-            onClick={() => setAuthType('login')}
+            className={`auth-tab ${authMode === 'login' ? 'active' : ''}`}
+            onClick={() => { setAuthMode('login'); setError(''); }}
           >
             <User size={14} /> Account
           </button>
+          <button
+            type="button"
+            className={`auth-tab ${authMode === 'accesscode' ? 'active' : ''}`}
+            onClick={() => { setAuthMode('accesscode'); setError(''); }}
+          >
+            <Hash size={14} /> Free Access
+          </button>
         </div>
 
-        <form className="auth-form" onSubmit={handleAuth}>
-          {error && <div className="auth-error">{error}</div>}
+        {error && <div className="auth-error">{error}</div>}
 
-          {authType === 'apikey' ? (
+        {successUser && (
+          <div className="auth-success">
+            <Shield size={16} />
+            Welcome, {successUser}! Connecting to Supernet…
+          </div>
+        )}
+
+        {/* --- API Key Tab --- */}
+        {authMode === 'apikey' && (
+          <form className="auth-form" onSubmit={handleApiKeySubmit}>
             <div className="input-wrapper">
               <Key size={16} color="var(--text-tertiary)" />
               <input
@@ -187,41 +301,89 @@ function AuthScreen({ onAuthenticate }) {
                 onChange={(e) => setApiKey(e.target.value)}
               />
             </div>
-          ) : (
-            <>
-              <div className="input-wrapper">
-                <User size={16} color="var(--text-tertiary)" />
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </div>
-              <div className="input-wrapper">
-                <Lock size={16} color="var(--text-tertiary)" />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </>
-          )}
+            <button type="submit" className="auth-submit-btn" disabled={isLoading}>
+              {isLoading ? <><span className="auth-spinner"></span> Connecting…</> : <><LogIn size={16} /> Sign in</>}
+            </button>
+          </form>
+        )}
 
-          <button
-            type="submit"
-            className="auth-submit-btn"
-            disabled={isLoading}
-          >
-            {isLoading ? 'Connecting…' : <><LogIn size={16} /> Sign in</>}
-          </button>
-        </form>
+        {/* --- Account Tab --- */}
+        {authMode === 'login' && (
+          <form className="auth-form" onSubmit={handleAccountSubmit}>
+            <div className="input-wrapper">
+              <User size={16} color="var(--text-tertiary)" />
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+            <div className="input-wrapper">
+              <Lock size={16} color="var(--text-tertiary)" />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={isLoading}>
+              {isLoading ? <><span className="auth-spinner"></span> Connecting…</> : <><LogIn size={16} /> Sign in</>}
+            </button>
+          </form>
+        )}
+
+        {/* --- Access Code Tab (Free Access) --- */}
+        {authMode === 'accesscode' && (
+          <div className="auth-form">
+            <div className="access-code-container">
+              <div className="access-code-label">
+                <Hash size={14} />
+                Access Code
+              </div>
+              <div className="digit-inputs">
+                {digits.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={el => digitRefs.current[i] = el}
+                    type="text"
+                    inputMode="text"
+                    maxLength={1}
+                    className={`digit-input ${digit ? 'filled' : ''} ${successUser ? 'success' : ''}`}
+                    value={digit}
+                    onChange={(e) => handleDigitChange(i, e.target.value)}
+                    onKeyDown={(e) => handleDigitKeyDown(i, e)}
+                    onPaste={i === 0 ? handleDigitPaste : undefined}
+                    disabled={isLoading}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="auth-submit-btn"
+              disabled={isLoading || !codeComplete}
+              onClick={handleAccessCodeSubmit}
+            >
+              {isLoading ? (
+                <><span className="auth-spinner"></span> Connecting…</>
+              ) : (
+                <><LogIn size={16} /> Connect for Free</>
+              )}
+            </button>
+
+            <div className="auth-device-note">
+              <Shield size={12} />
+              Access codes are locked to a single device for security
+            </div>
+          </div>
+        )}
 
         <div className="auth-footer">
           Don't have an account?{' '}
-          <a href="https://app.sogni.ai/create?code=soft4211" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+          <a href="https://app.sogni.ai/create?code=soft4211" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
             Sign Up on Sogni ↗
           </a>
         </div>
@@ -250,23 +412,23 @@ function App() {
 
   useEffect(() => {
     const autoLogin = async () => {
-      const authData = localStorage.getItem('sogni_auth');
+      const authData = getStoredSession();
       if (authData) {
         try {
-          const { authType, apiKey, token, refreshToken } = JSON.parse(authData);
+          const { authType, apiKey, token, refreshToken } = authData;
           let client;
-          if (authType === 'apikey') {
-            client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', apiKey, network: 'fast' });
-          } else if (authType === 'login' && token && refreshToken) {
-            client = await SogniClient.createInstance({ appId: 'sogni-helper-app-1', network: 'fast' });
+          if (authType === 'apikey' && apiKey) {
+            client = await SogniClient.createInstance({ appId: SOGNI_APP_ID, apiKey, network: 'fast', restEndpoint: window.location.origin });
+          } else if ((authType === 'shared' || authType === 'login') && token && refreshToken) {
+            client = await SogniClient.createInstance({ appId: SOGNI_APP_ID, network: 'fast', restEndpoint: window.location.origin });
             await client.setTokens({ token, refreshToken });
-          } else if (authType === 'login') {
-             throw new Error("Old session format. Please login again.");
+          } else {
+            throw new Error('Session expired. Please login again.');
           }
           if (client) setSogniClient(client);
         } catch (e) {
-          console.error("Auto-login failed", e);
-          localStorage.removeItem('sogni_auth');
+          console.error('Auto-login failed', e);
+          clearSession();
         }
       }
       setIsInitializing(false);
@@ -288,7 +450,10 @@ function App() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('sogni_auth');
+    if (sogniClient) {
+      try { sogniClient.dispose(); } catch (e) { console.warn('Dispose error:', e); }
+    }
+    clearSession();
     setSogniClient(null);
   };
 
@@ -322,6 +487,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
   const [isSearching, setIsSearching] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [balances, setBalances] = useState({ sparks: '0.00', sogni: '0.00' });
+  const [connectionStatus, setConnectionStatus] = useState('connected'); // 'connected' | 'disconnected' | 'reconnecting'
 
   const fetchBalances = async () => {
     if (!sogni) return;
@@ -338,6 +504,38 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
 
   useEffect(() => {
     fetchBalances();
+
+    // WebSocket connection monitoring
+    if (sogni?.apiClient) {
+      const handleConnected = () => {
+        console.log('[WS] Connected to Sogni Supernet');
+        setConnectionStatus('connected');
+      };
+      const handleDisconnected = (data) => {
+        console.warn('[WS] Disconnected from Sogni Supernet:', data);
+        setConnectionStatus('disconnected');
+        // Auto-recover: if auth is still valid, SDK will auto-reconnect (up to 5 attempts)
+        // Show reconnecting state briefly
+        setTimeout(() => {
+          if (sogni?.apiClient?.socket?.isConnected) {
+            setConnectionStatus('connected');
+          }
+        }, 3000);
+      };
+
+      sogni.apiClient.on('connected', handleConnected);
+      sogni.apiClient.on('disconnected', handleDisconnected);
+
+      // Check initial state
+      if (sogni.apiClient.socket?.isConnected) {
+        setConnectionStatus('connected');
+      }
+
+      return () => {
+        sogni.apiClient.off('connected', handleConnected);
+        sogni.apiClient.off('disconnected', handleDisconnected);
+      };
+    }
   }, [sogni]);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
@@ -362,7 +560,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
     e.stopPropagation();
     const sessionToRename = sessions.find(s => s.id === id);
     if (!sessionToRename) return;
-    
+
     let newTitle = window.prompt("Enter new chat name:", sessionToRename.name);
     if (newTitle !== null) {
       newTitle = newTitle.trim();
@@ -419,7 +617,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
         mainTitle = mainTitle.replace(/[.!?,;:]+$/g, '').trim();
         // Take only the first line if multi-line
         mainTitle = mainTitle.split('\n')[0].trim();
-        
+
         if (!mainTitle || mainTitle.length <= 1) {
           // Fallback: use first words of user's message
           const extractedUserPrompt = userText.split('\n')[0].replace('User: ', '').trim();
@@ -493,8 +691,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
           messages: apiMessages,
           max_tokens: 8192,
           stream: false,
-          think: true,
-          taskProfile: 'reasoning'
+          think: true
         };
 
         // Allow tools for normal loops, but force a normal response on the final loop
@@ -546,19 +743,19 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               result = sogniDocs[args.filename] || 'Document not found.';
             } else if (funcName === 'generate_visual_aid') {
               const { topic, prompt_override, modelId, width, height, is_infographic = true } = args;
-              
+
               const finalModelId = modelId || 'flux2-dev'; // Upgraded to Pro model
               const finalWidth = width || 1024;
               const finalHeight = height || 1024;
-              
+
               // Nano Banana 3 Pro (Gemini 3 Pro) quality prompt engineering
               let positivePrompt = prompt_override || `A professional, world-class minimalist infographic about: ${topic}. 
               Clean typographic layout, perfectly readable text, high-contrast flat vector design. 
               Minimalist aesthetic, deep blue and white Sogni branding, ultra-sharp precision, vector graphics, 8k resolution.
               Ensure all text is correctly spelled and clearly presented in an organized diagram.`;
-              
+
               if (is_infographic && !prompt_override) {
-                 positivePrompt += " minimalist corporate style, data visualization masterpiece, award-winning graphic design.";
+                positivePrompt += " minimalist corporate style, data visualization masterpiece, award-winning graphic design.";
               }
 
               try {
@@ -577,7 +774,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
                 };
 
                 const project = await sogni.projects.create(projectProps);
-                
+
                 const urls = await project.waitForCompletion();
                 if (urls && urls.length > 0) {
                   result = `Successfully generated a "Pro" visual aid using ${finalModelId}.\n\n![Visual Aid - ${topic}](${urls[0]})\n\n*(Note: This high-fidelity infographic was generated using best-in-class parameters (30 steps, 8.0 guidance) on the Sogni Supernet)*`;
@@ -588,28 +785,28 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
                 console.error("Generation failed:", e);
                 // Fallback attempt to flux1-dev-fp8 if flux2-dev failed
                 if (finalModelId === 'flux2-dev') {
-                   try {
-                     const fallbackProject = await sogni.projects.create({
-                        type: 'image',
-                        modelId: 'flux1-dev-fp8', // Fallback to known high-fidelity ID
-                        positivePrompt: positivePrompt,
-                        numberOfMedia: 1,
-                        steps: 30,
-                        guidance: 8.0,
-                        width: finalWidth,
-                        height: finalHeight,
-                        sizePreset: 'custom',
-                        outputFormat: 'jpg'
-                     });
-                     const fallbackUrls = await fallbackProject.waitForCompletion();
-                     if (fallbackUrls?.[0]) {
-                        result = `Successfully generated a high-fidelity visual aid (via fallback model flux1-dev-fp8).\n\n![Visual Aid - ${topic}](${fallbackUrls[0]})`;
-                     } else {
-                        result = "Fallback generation failed to return an image.";
-                     }
-                   } catch(err2) {
-                     result = `Primary and fallback generation failed: ${err2.message}`;
-                   }
+                  try {
+                    const fallbackProject = await sogni.projects.create({
+                      type: 'image',
+                      modelId: 'flux1-dev-fp8', // Fallback to known high-fidelity ID
+                      positivePrompt: positivePrompt,
+                      numberOfMedia: 1,
+                      steps: 30,
+                      guidance: 8.0,
+                      width: finalWidth,
+                      height: finalHeight,
+                      sizePreset: 'custom',
+                      outputFormat: 'jpg'
+                    });
+                    const fallbackUrls = await fallbackProject.waitForCompletion();
+                    if (fallbackUrls?.[0]) {
+                      result = `Successfully generated a high-fidelity visual aid (via fallback model flux1-dev-fp8).\n\n![Visual Aid - ${topic}](${fallbackUrls[0]})`;
+                    } else {
+                      result = "Fallback generation failed to return an image.";
+                    }
+                  } catch (err2) {
+                    result = `Primary and fallback generation failed: ${err2.message}`;
+                  }
                 } else {
                   result = `Failed to generate visual aid: ${e.message || 'Unknown error'}`;
                 }
@@ -642,7 +839,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       if (typeof botText !== 'string') {
         botText = "The Sogni model responded, but the data format was unreadable.";
       }
-      
+
       // Safety check: If images were generated in this turn but not included in botText, append them
       if (typeof botText === 'string') {
         const toolMessages = apiMessages.filter(m => m.role === 'tool');
@@ -677,11 +874,22 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
       }
     } catch (err) {
       console.error("Supernet connection failure:", err);
-      let errorMsg = err.message || "An unknown network error occurred.";
+      const rawMsg = err.message || "An unknown network error occurred.";
+      let errorMsg = rawMsg;
+      
+      // Append a helpful hint based on error type (but keep the original message for debugging)
+      if (rawMsg.includes('WebSocket') || rawMsg.includes('socket') || rawMsg.includes('connection')) {
+        errorMsg = `${rawMsg} — Check your internet connection or try signing out and back in.`;
+      } else if (rawMsg.includes('timed out') || rawMsg.includes('timeout')) {
+        errorMsg = `${rawMsg} — The Supernet may be busy, please try again.`;
+      } else if (rawMsg.includes('auth') || rawMsg.includes('401') || rawMsg.includes('unauthorized')) {
+        errorMsg = `${rawMsg} — Session may have expired. Please sign out and back in.`;
+      }
+      
       setStreamingText('');
       setSessions(prev => prev.map(s => {
         if (s.id === currentSessionId) {
-          return { ...s, messages: [...s.messages, { id: Date.now() + 1, text: `[SYSTEM ERROR] Failed to connect to Sogni Supernet: ${errorMsg}`, sender: 'bot' }] };
+          return { ...s, messages: [...s.messages, { id: Date.now() + 1, text: `[SYSTEM ERROR] ${errorMsg}`, sender: 'bot' }] };
         }
         return s;
       }));
@@ -703,6 +911,25 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
 
   return (
     <div className="app-container">
+      {/* WebSocket connection status banner */}
+      {connectionStatus === 'disconnected' && (
+        <div className="connection-banner">
+          <WifiOff size={14} />
+          <span>Connection lost — reconnecting to Sogni Supernet…</span>
+          <button onClick={() => {
+            try {
+              sogni.apiClient.socket.connect();
+              setConnectionStatus('reconnecting');
+            } catch (e) { console.error('Reconnect failed:', e); }
+          }}>Retry</button>
+        </div>
+      )}
+      {connectionStatus === 'reconnecting' && (
+        <div className="connection-banner reconnecting">
+          <Wifi size={14} />
+          <span>Reconnecting…</span>
+        </div>
+      )}
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -726,7 +953,7 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
               <Menu size={20} />
             </button>
             <div className="model-badge">
-              <span className="dot"></span>
+              <span className={`dot ${connectionStatus === 'connected' ? '' : 'disconnected'}`}></span>
               Sogni SDK Helper
             </div>
             <div style={{ marginLeft: '1rem', fontSize: '0.8rem', color: 'var(--text-tertiary)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px' }}>
@@ -734,9 +961,9 @@ function ChatApp({ sogni, onLogout, theme, toggleTheme }) {
             </div>
           </div>
           <div className="header-right">
-            <select 
-              className="model-selector" 
-              value={selectedModel} 
+            <select
+              className="model-selector"
+              value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-sunken)', color: 'var(--text-primary)', border: '1px solid var(--border)', marginRight: '1rem', fontSize: '0.85rem' }}
             >

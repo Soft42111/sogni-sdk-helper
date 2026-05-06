@@ -1,8 +1,20 @@
 {
   "rewrites": [
     {
-      "source": "/sogni-api/:path*",
-      "destination": "https://api.sogni.ai/:path*"
+      "source": "/v1/:path*",
+      "destination": "https://api.sogni.ai/v1/:path*"
+    },
+    {
+      "source": "/v2/:path*",
+      "destination": "https://api.sogni.ai/v2/:path*"
+    },
+    {
+      "source": "/v3/:path*",
+      "destination": "https://api.sogni.ai/v3/:path*"
+    },
+    {
+      "source": "/v4/:path*",
+      "destination": "https://api.sogni.ai/v4/:path*"
     }
   ]
 }

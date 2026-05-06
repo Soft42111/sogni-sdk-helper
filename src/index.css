@@ -124,6 +124,52 @@ body {
   position: relative;
 }
 
+/* Connection Status Banner */
+.connection-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--accent-red);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 500;
+  z-index: 100;
+  flex-shrink: 0;
+  animation: slideDown 0.3s ease;
+}
+
+.connection-banner.reconnecting {
+  background: var(--accent-amber);
+  color: #1a1a1a;
+}
+
+.connection-banner button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 0.2rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.connection-banner button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 /* ======================== */
 /* SIDEBAR                  */
 /* ======================== */
@@ -351,6 +397,17 @@ body {
   border-radius: 50%;
   background: var(--accent-primary);
   animation: pulse 2s ease-in-out infinite;
+  transition: background 0.3s ease;
+}
+
+.model-badge .dot.disconnected {
+  background: var(--accent-red);
+  animation: pulse-red 1s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 @keyframes pulse {
@@ -908,6 +965,138 @@ body {
 }
 .auth-footer button:hover {
   text-decoration: underline;
+}
+
+/* ======================== */
+/* ACCESS CODE INPUT        */
+/* ======================== */
+.access-code-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.access-code-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.digit-inputs {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.digit-input {
+  width: 48px;
+  height: 56px;
+  border: 2px solid var(--border-input);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  text-align: center;
+  outline: none;
+  transition: all var(--transition-fast);
+  caret-color: var(--accent-primary);
+}
+
+.digit-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.15), 0 0 20px rgba(16, 163, 127, 0.08);
+  transform: translateY(-2px);
+}
+
+.digit-input.filled {
+  border-color: var(--accent-primary);
+  background: rgba(16, 163, 127, 0.05);
+}
+
+.digit-input.success {
+  border-color: var(--accent-primary);
+  background: rgba(16, 163, 127, 0.1);
+  box-shadow: 0 0 12px rgba(16, 163, 127, 0.2);
+  animation: successPulse 0.6s ease;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.digit-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Auth success message */
+.auth-success {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--accent-primary);
+  background: rgba(16, 163, 127, 0.08);
+  border: 1px solid rgba(16, 163, 127, 0.2);
+  animation: fadeSlideIn 0.3s ease;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Device lock note */
+.auth-device-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  margin-top: 0.5rem;
+}
+
+/* Auth spinner */
+.auth-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+
+/* Back button for API key mode */
+.auth-back-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0.5rem;
+  text-align: center;
+  transition: color var(--transition-fast);
+}
+.auth-back-btn:hover {
+  color: var(--text-primary);
 }
 
 /* ======================== */
